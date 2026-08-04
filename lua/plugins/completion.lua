@@ -1,4 +1,4 @@
-local snippetDir = "~/.config/nvim-snippets/"
+local snippetDir = vim.fn.stdpath("config") .. "/snippets/"
 
 vim.pack.add({
 	{ src = "https://github.com/saghen/blink.cmp", version = vim.version.range("1") },

@@ -31,7 +31,7 @@ by `lua/plugins/init.lua`.
 | Format on save                         | `conform.nvim` (1000ms timeout)                                  |
 | LSP install                            | `mason.nvim` + `mason-tool-installer` (auto-install at start)    |
 | LSP client                             | Neovim 0.12's `vim.lsp.config()` (not lspconfig's setup)         |
-| Snippets                               | `LuaSnip` + `vim.snippets`, stored in `~/.config/nvim-snippets/` |
+| Snippets                               | `LuaSnip` + `vim.snippets`, stored in `~/.config/nvim/snippets/` |
 | tmux navigation                        | `nvim-tmux-navigation` (not vim-tmux-navigator)                  |
 | Colorscheme                            | `catppuccin` (latte)                                             |
 
