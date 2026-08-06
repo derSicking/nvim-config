@@ -47,6 +47,7 @@ vim.lsp.config("angularls", {
 		"htmlangular",
 	},
 	root_markers = { "angular.json" },
+	workspace_required = true,
 	cmd = {
 		"npx",
 		"ngserver",
