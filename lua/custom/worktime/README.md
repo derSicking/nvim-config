@@ -11,8 +11,8 @@ Timestamp-ordered TSV event log, one event per line:
 TIMESTAMP ␉ EVENT ␉ PROJECT ␉ TICKET ␉ MESSAGE
 ```
 
-- `TIMESTAMP`: `YYYY-MM-DDTHH:MM:SSZ`, stored in UTC; fixed width, so lines
-  sort lexicographically — and correctly across timezones. Commands accept and
+- `TIMESTAMP`: `YYYY-MM-DDTHH:MM:SSZ`, stored in UTC; fixed width, so lines sort
+  lexicographically — and correctly across timezones. Commands accept and
   display local time, converted at the edges.
 - `EVENT`: `start | end`
 - `PROJECT` / `TICKET`: describe the block starting at this line; recorded on
@@ -47,16 +47,16 @@ violated, e.g. after a hand-edit) are reported by `:WorkValidate`.
 ### Write rules
 
 All mutations validate against the current log, then commit atomically (temp
-file + `rename()`). Live events (time = now) are appends at the tail;
-backdated ones insert at their sorted position — same rules either way.
+file + `rename()`). Live events (time = now) are appends at the tail; backdated
+ones insert at their sorted position — same rules either way.
 
-| Mutation                    | Valid iff                                                                                   | Result                 |
-| --------------------------- | ------------------------------------------------------------------------------------------- | ---------------------- |
-| `WorkStart [time]`          | tail is `end`/empty ∧ `time` > tail ts ∧ `time` ≤ now                                       | one `start` at tail    |
-| `WorkEnd [time]`            | tail is `start` ∧ `time` ≥ that start's ts ∧ `time` ≤ now                                   | one `end` at tail      |
-| `WorkAdd start <s> end <e>` | fits in a gap: prev is `end`/∅, next is `start`/∅, prev_ts < s < e < next_ts                | work pair into gap     |
-| `WorkAdd end <e> start <s>` | fits in a block: prev is `start`, next is `end`/∅, prev_ts < e < s < next_ts                | break pair into block  |
-| `WorkChange [ticket] [message...]` | tail is `start` (recording); live-only, no backdating                                 | `end` + `start` at tail, both at now |
+| Mutation                           | Valid iff                                                                    | Result                               |
+| ---------------------------------- | ---------------------------------------------------------------------------- | ------------------------------------ |
+| `WorkStart [time]`                 | tail is `end`/empty ∧ `time` > tail ts ∧ `time` ≤ now                        | one `start` at tail                  |
+| `WorkEnd [time]`                   | tail is `start` ∧ `time` ≥ that start's ts ∧ `time` ≤ now                    | one `end` at tail                    |
+| `WorkAdd start <s> end <e>`        | fits in a gap: prev is `end`/∅, next is `start`/∅, prev_ts < s < e < next_ts | work pair into gap                   |
+| `WorkAdd end <e> start <s>`        | fits in a block: prev is `start`, next is `end`/∅, prev_ts < e < s < next_ts | break pair into block                |
+| `WorkChange [ticket] [message...]` | tail is `start` (recording); live-only, no backdating                        | `end` + `start` at tail, both at now |
 
 - `WorkAdd start … end` records forgotten work in a gap.
 - `WorkAdd end … start` records forgotten time off inside a block — this also
@@ -64,8 +64,8 @@ backdated ones insert at their sorted position — same rules either way.
   `start 9 | end 10 | start 11 | end 17`) and, at the tail of an open block, is
   exactly "break now, resume now" in one atomic step. The resumed `start` can
   carry a new ticket/project.
-- Out-of-window pairs are rejected with the allowed range in the message —
-  never silently clamped. Future timestamps are rejected.
+- Out-of-window pairs are rejected with the allowed range in the message — never
+  silently clamped. Future timestamps are rejected.
 - A break pair needs a containing block, a work pair needs a gap. The
   alternation invariant stays closed under all four mutations.
 - `WorkChange` is the zero-gap case of `WorkAdd end … start` at the tail: it
@@ -82,9 +82,9 @@ backdated ones insert at their sorted position — same rules either way.
   state.
 - Backfilled/edited entries insert at their chronological position via the same
   rewrite path. Rare and safe.
-- Reads are streaming: for a time window (e.g. one week) we byte-bisect into
-  the file and parse only the slice — ISO timestamps compare lexicographically,
-  so the bisect is plain string comparison.
+- Reads are streaming: for a time window (e.g. one week) we byte-bisect into the
+  file and parse only the slice — ISO timestamps compare lexicographically, so
+  the bisect is plain string comparison.
 - The raw file reads chronologically, greppable, hand-editable.
 
 ## Storage
@@ -95,8 +95,8 @@ rewrites use temp file + atomic rename. (See Sync below.)
 
 ## Sync (cross-machine)
 
-Optional: set `remote` in the config and the plugin manages `origin` (adds it
-on first run). Without it, everything works purely local.
+Optional: set `remote` in the config and the plugin manages `origin` (adds it on
+first run). Without it, everything works purely local.
 
 The remote is the source of truth. Every mutation:
 
@@ -150,17 +150,17 @@ notification so a wrong match is visible immediately.
 
 ## Commands
 
-| Command                                            | Purpose                              | Step |
-| -------------------------------------------------- | ------------------------------------ | ---- |
-| `WorkStart [time] [ticket] [message...]`           | start a work block, optionally backdated | 1 |
-| `WorkEnd [time] [message...]`                      | end the current block, optionally backdated | 1 |
-| `WorkStatus`                                       | current state + today's totals       | 1    |
-| `WorkAdd start <s> end <e> [ticket] [message...]`  | forgotten work into a gap            | 3    |
-| `WorkAdd end <e> start <s> [message...]`           | forgotten break inside a block       | 3    |
-| `WorkChange [ticket] [message...]`                 | switch ticket while recording (end + start at tail) | 3 |
-| `WorkLog`                                          | viewer buffer                        | 4    |
-| `WorkExport`                                       | CSV with derived values              | 5    |
-| `WorkSync` / `WorkPush`                            | sync with remote now (fetch+rebase+push / push) | 6 |
+| Command                                           | Purpose                                             | Step |
+| ------------------------------------------------- | --------------------------------------------------- | ---- |
+| `WorkStart [time] [ticket] [message...]`          | start a work block, optionally backdated            | 1    |
+| `WorkEnd [time] [message...]`                     | end the current block, optionally backdated         | 1    |
+| `WorkStatus`                                      | current state + today's totals                      | 1    |
+| `WorkAdd start <s> end <e> [ticket] [message...]` | forgotten work into a gap                           | 3    |
+| `WorkAdd end <e> start <s> [message...]`          | forgotten break inside a block                      | 3    |
+| `WorkChange [ticket] [message...]`                | switch ticket while recording (end + start at tail) | 3    |
+| `WorkLog`                                         | viewer buffer                                       | 4    |
+| `WorkExport`                                      | CSV with derived values                             | 5    |
+| `WorkSync` / `WorkPush`                           | sync with remote now (fetch+rebase+push / push)     | 6    |
 
 Optional `time` is detected by pattern (`HH:MM` or full ISO timestamp);
 remaining args are ticket/message. No separate break commands — a break is an
@@ -172,8 +172,8 @@ remaining args are ticket/message. No separate break commands — a break is an
   `:WorkStart`
 - `VimLeavePre`: warn if a block is still open
 - Statusline segment: recording state + remote state (e.g.
-  `⏱ work · client-a · 3.2h ⇡` — synced / push pending / remote ahead /
-  diverged / offline)
+  `⏱ work · client-a · 3.2h ⇡` — synced / push pending / remote ahead / diverged
+  / offline)
 
 ## Export (derived values)
 
@@ -189,16 +189,16 @@ week × project × ticket → hours. Written to the data dir.
 
 ## Build status
 
-| Step | Content                                                     | Status  |
-| ---- | ----------------------------------------------------------- | ------- |
-| 0    | README + scaffold                                           | done    |
-| 1    | MVP: config + storage + commands, wired into `lua/init.lua` | pending |
-| 2    | reminders + statusline segment                              | pending |
-| 3    | `WorkAdd` backfill                                          | pending |
-| 4    | `WorkLog` viewer                                            | pending |
-| 5    | `WorkExport` CSV                                            | pending |
+| Step | Content                                                             | Status  |
+| ---- | ------------------------------------------------------------------- | ------- |
+| 0    | README + scaffold                                                   | done    |
+| 1    | MVP: config + storage + commands, wired into `lua/init.lua`         | done    |
+| 2    | reminders + statusline segment                                      | pending |
+| 3    | `WorkAdd` backfill                                                  | pending |
+| 4    | `WorkLog` viewer                                                    | pending |
+| 5    | `WorkExport` CSV                                                    | pending |
 | 6    | sync: git remote, UTC storage, remote status, `WorkSync`/`WorkPush` | pending |
-| 7    | extras (below)                                              | pending |
+| 7    | extras (below)                                                      | pending |
 
 ## Backlog / ideas
 
