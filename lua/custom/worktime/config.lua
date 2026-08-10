@@ -74,8 +74,8 @@ local function normalize(dir)
 	return vim.fn.fnamemodify(vim.fn.expand(dir), ":p"):gsub("/+$", "")
 end
 
--- Longest-prefix match over configured project dirs; fallback: cwd basename.
-function M.detect_project(cwd)
+-- Longest-prefix match over configured project dirs; nil if nothing matches.
+function M.match_project(cwd)
 	local cfg = M.get()
 	local best, best_len
 	for name, proj in pairs(cfg.projects or {}) do
@@ -91,10 +91,12 @@ function M.detect_project(cwd)
 			end
 		end
 	end
-	if best then
-		return best
-	end
-	return vim.fn.fnamemodify(cwd, ":t")
+	return best
+end
+
+-- Match with fallback: cwd basename when nothing is configured.
+function M.detect_project(cwd)
+	return M.match_project(cwd) or vim.fn.fnamemodify(cwd, ":t")
 end
 
 function M.weekly_target(project)

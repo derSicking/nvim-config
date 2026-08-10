@@ -5,6 +5,7 @@ local snacks = require("snacks")
 snacks.setup({
 	indent = {},
 	input = {},
+	notifier = {},
 	scroll = {},
 	explorer = {},
 	terminal = {},

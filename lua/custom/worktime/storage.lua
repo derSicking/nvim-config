@@ -102,6 +102,18 @@ function M.diff_min(ts_a, ts_b)
 	return math.floor((b - a) / 60)
 end
 
+-- Compact local time for messages: "09:00" today, "2026-08-09 09:00" otherwise.
+function M.fmt_ts(utc_ts)
+	local local_ts = M.to_local(utc_ts)
+	if not local_ts then
+		return "?"
+	end
+	if local_ts:sub(1, 10) == os.date("%Y-%m-%d") then
+		return local_ts:sub(12, 16)
+	end
+	return local_ts:gsub("T", " "):sub(1, 16)
+end
+
 -- Parsing ----------------------------------------------------------------------
 
 local function sanitize(s)
@@ -167,10 +179,10 @@ function M.mutate_start(ts, project, ticket, message)
 	if tail and tail.event == "start" then
 		local extra = tail.project ~= "" and " · " .. tail.project or ""
 		local tick = tail.ticket ~= "" and " · " .. tail.ticket or ""
-		return fail("already recording since " .. M.to_local(tail.ts) .. extra .. tick .. "; :WorkEnd first")
+		return fail("already recording since " .. M.fmt_ts(tail.ts) .. extra .. tick .. "; :WorkEnd first")
 	end
 	if tail and ts <= tail.ts then
-		return fail("start must be after the last entry (" .. M.to_local(tail.ts) .. ")")
+		return fail("start must be after the last entry (" .. M.fmt_ts(tail.ts) .. ")")
 	end
 	if ts > M.now_utc() then
 		return fail("start cannot be in the future")
@@ -188,7 +200,7 @@ function M.mutate_end(ts, message)
 		return fail("not recording; :WorkStart first")
 	end
 	if ts < tail.ts then
-		return fail("end must be after the block start (" .. M.to_local(tail.ts) .. ")")
+		return fail("end must be after the block start (" .. M.fmt_ts(tail.ts) .. ")")
 	end
 	if ts > M.now_utc() then
 		return fail("end cannot be in the future")

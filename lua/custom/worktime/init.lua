@@ -6,6 +6,9 @@ local commands = require("custom.worktime.commands")
 
 config.reload()
 
+require("custom.worktime.reminders")
+require("custom.worktime.statusline")
+
 vim.api.nvim_create_user_command("WorkStart", commands.workstart, {
 	nargs = "*",
 	desc = "Start a work block: WorkStart [time] [ticket] [message...]",

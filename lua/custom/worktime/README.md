@@ -169,11 +169,18 @@ remaining args are ticket/message. No separate break commands — a break is an
 ## Reminders
 
 - `VimEnter` + `VimResume` (Ctrl-Z suspend): if not recording, suggest
-  `:WorkStart`
-- `VimLeavePre`: warn if a block is still open
+  `:WorkStart` — only when cwd matches a configured project. If a block was
+  left open by a previous session, warn about it (floating notifications
+  cannot render during exit, so the next start is the reliable catch).
+- `VimLeavePre`: if a block is still open, a blocking y/n prompt — Yes
+  records the end now and closes; No closes with the block left open.
 - Statusline segment: recording state + remote state (e.g.
-  `⏱ work · client-a · 3.2h ⇡` — synced / push pending / remote ahead / diverged
-  / offline)
+  `⏱ TICKET-42 · client-a · 3.2h ⇡` — synced / push pending / remote ahead /
+  diverged / offline; `Working` in place of the ticket when none was given).
+  Configured project open but idle: dimmed `◌ not recording · <project>`.
+  No configured project: stock bar unchanged.
+- Reminders render via `snacks.notifier` (WARN + long timeout), so they show
+  as prominent floating windows.
 
 ## Export (derived values)
 
@@ -193,7 +200,7 @@ week × project × ticket → hours. Written to the data dir.
 | ---- | ------------------------------------------------------------------- | ------- |
 | 0    | README + scaffold                                                   | done    |
 | 1    | MVP: config + storage + commands, wired into `lua/init.lua`         | done    |
-| 2    | reminders + statusline segment                                      | pending |
+| 2    | reminders + statusline segment                              | done   |
 | 3    | `WorkAdd` backfill                                                  | pending |
 | 4    | `WorkLog` viewer                                                    | pending |
 | 5    | `WorkExport` CSV                                                    | pending |

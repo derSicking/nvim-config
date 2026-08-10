@@ -44,6 +44,8 @@ return {
 	projects = {
 		alpha = { dirs = { "%s/Projects/alpha", "%s/Projects/alpha-extra" }, weekly_target = 10 },
 		beta = { dirs = { "%s/Projects/beta" }, weekly_target = 5 },
+		sandbox = { dirs = { "/tmp/wt-projects" } },
+		["percent%%proj"] = { dirs = { "/tmp/wt-percent" } },
 	},
 }
 ]], home, home, home))
@@ -59,6 +61,14 @@ check(config.detect_project(home .. "/Projects/beta") == "beta", "second project
 check(config.detect_project(home .. "/Projects/unknown") == "unknown", "unknown dir, basename fallback")
 check(config.weekly_target("alpha") == 10, "weekly_target read")
 check(config.weekly_target("nope") == nil, "weekly_target nil for unknown")
+
+-- match_project: configured match only, no fallback (reminder gate)
+check(config.match_project(home .. "/Projects/alpha") == "alpha", "match_project exact")
+check(config.match_project(home .. "/Projects/alpha-extra/tools") == "alpha", "match_project longest-prefix")
+check(config.match_project(home .. "/Projects/alphaX") == nil, "match_project no boundary -> nil")
+check(config.match_project(home .. "/Projects/unknown") == nil, "match_project unknown -> nil")
+check(config.detect_project(home .. "/Projects/unknown") == "unknown", "detect_project fallback unchanged")
+check(config.match_project("/tmp/wt-projects") == "sandbox", "match_project sandbox")
 
 -- Time helpers ----------------------------------------------------------------
 
@@ -76,6 +86,13 @@ check(storage.parse_time_arg("2026-08-10T09:00:00Z") == "2026-08-10T09:00:00Z", 
 check(storage.parse_time_arg("banana") == nil, "garbage rejected")
 check(storage.diff_min("2026-08-10T09:00:00Z", "2026-08-10T11:30:00Z") == 150, "diff_min works")
 
+-- fmt_ts: compact notification timestamps
+local util = require("custom.worktime.util")
+local now_loc = storage.to_local(ts)
+check(util.fmt_ts(ts) == now_loc:sub(12, 16), "fmt_ts: today shows HH:MM")
+local old = "2020-01-01T10:00:00Z"
+check(util.fmt_ts(old) == storage.to_local(old):gsub("T", " "):sub(1, 16), "fmt_ts: other day shows date + HH:MM")
+
 -- Write rules -----------------------------------------------------------------
 
 check(storage.state(storage.read_log()) == "empty", "empty state")
@@ -87,6 +104,7 @@ check(storage.state(storage.read_log()) == "recording", "state recording")
 
 res = storage.mutate_start(storage.now_utc(), "x", "", "")
 check(not res.ok, "double start rejected: " .. (res.reason or "NO REASON"))
+check(res.reason:find("since %d%d:%d%d") ~= nil, "double start shows compact time: " .. (res.reason or "?"))
 
 res = storage.mutate_end(storage.now_utc(), "done\twith\ttabs")
 check(res.ok, "end ok: " .. (res.reason or ""))
@@ -131,19 +149,83 @@ check(not res.ok, "backdate inside open block rejected: " .. (res.reason or "NO 
 -- Command layer ---------------------------------------------------------------
 
 local commands = require("custom.worktime.commands")
+
+-- Tail is an open start here; WorkStart must be rejected, no write.
+local n = #storage.read_log()
 commands.workstart({ args = "" })
-entries = storage.read_log()
-check(entries[#entries].event == "start", "command WorkStart writes start")
+check(#storage.read_log() == n, "WorkStart while recording does not write")
+
 commands.workend({ args = "done for the day" })
 entries = storage.read_log()
 check(entries[#entries].event == "end", "command WorkEnd writes end")
 check(entries[#entries].message == "done for the day", "command message passed")
 commands.status() -- must not error
 
-local n = #storage.read_log()
+n = #storage.read_log()
+commands.workstart({ args = "2099-01-01T00:00:00Z" })
+check(#storage.read_log() == n, "future WorkStart does not write")
+
+-- Statusline ------------------------------------------------------------------
+
+local statusline = require("custom.worktime.statusline")
+check(statusline.get():find("⏱", 1, true) == nil, "statusline idle: no segment")
+check(statusline.get() == statusline.STOCK, "statusline idle: byte-identical to stock")
+
+-- Configured project open but idle: dimmed not-recording nudge
+vim.fn.mkdir("/tmp/wt-projects", "p")
+local orig_cwd = vim.loop.cwd()
+vim.loop.chdir("/tmp/wt-projects")
+statusline.invalidate()
+local seg = statusline.get()
+check(seg:find("not recording", 1, true) ~= nil, "statusline: not-recording nudge in configured project")
+check(seg:find("%%#Comment#", 1, true) == nil, "statusline: highlight directive not double-escaped")
+check(seg:find("%#Comment#", 1, true) ~= nil, "statusline: highlight directive present")
+
+-- % in project names must be escaped for statusline rendering
+vim.fn.mkdir("/tmp/wt-percent", "p")
+vim.loop.chdir("/tmp/wt-percent")
+statusline.invalidate()
+seg = statusline.get()
+check(seg:find("percent%%proj", 1, true) ~= nil, "statusline: % in project name escaped")
+
+vim.loop.chdir(orig_cwd)
+statusline.invalidate()
+
+vim.loop.sleep(1100) -- advance now_utc() past the last end's second
+commands.workstart({ args = "T-9 statusline check" })
+check(storage.state(storage.read_log()) == "recording", "statusline: recording state")
+seg = statusline.get()
+check(seg:find("⏱", 1, true) ~= nil, "statusline: segment present while recording")
+check(seg:find("T-9", 1, true) ~= nil, "statusline: ticket shown")
+check(seg:find("%%=", 1, false) ~= nil, "statusline: right-alignment preserved")
+
+commands.workend({ args = "" })
+vim.loop.sleep(1100) -- same-second guard before the next start
 commands.workstart({ args = "" })
-commands.workstart({ args = "" }) -- invalid: already recording
-check(#storage.read_log() == n, "invalid WorkStart does not write")
+seg = statusline.get()
+check(seg:find("Working", 1, true) ~= nil, "statusline: 'Working' when no ticket")
+
+commands.workend({ args = "" })
+check(statusline.get():find("⏱", 1, true) == nil, "statusline: segment gone when idle")
+
+-- Reminders -------------------------------------------------------------------
+
+local reminders = require("custom.worktime.reminders")
+
+-- Idle: no-ops, no crash
+reminders.check_left_open()
+reminders.warn_open_block()
+
+-- Recording: check_left_open notifies; warn_open_block prompts — headless
+-- confirm() returns the default (Yes), so the end gets written.
+vim.loop.sleep(1100)
+commands.workstart({ args = "" })
+check(storage.state(storage.read_log()) == "recording", "reminders: recording for close prompt test")
+reminders.check_left_open() -- must not error
+reminders.warn_open_block()
+entries = storage.read_log()
+check(storage.state(entries) == "idle", "reminders: close prompt Yes wrote the end")
+check(entries[#entries].event == "end", "reminders: tail is end after close prompt")
 
 print(failures == 0 and "ALL OK" or failures .. " FAILURES")
 os.exit(failures == 0 and 0 or 1)

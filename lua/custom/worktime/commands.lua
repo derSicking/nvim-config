@@ -2,21 +2,11 @@ local M = {}
 
 local config = require("custom.worktime.config")
 local storage = require("custom.worktime.storage")
+local statusline = require("custom.worktime.statusline")
+local util = require("custom.worktime.util")
 
 local function notify(msg, level)
 	vim.notify(msg, level or vim.log.levels.INFO)
-end
-
-local function fmt_duration(min)
-	local h = math.floor(min / 60)
-	local m = min % 60
-	if h == 0 then
-		return string.format("%d min", m)
-	end
-	if m == 0 then
-		return string.format("%dh", h)
-	end
-	return string.format("%dh %02dm", h, m)
 end
 
 -- Split args into (utc_ts, rest). A first token containing ":" is parsed as
@@ -53,8 +43,9 @@ function M.workstart(opts)
 		notify("failed to write log", vim.log.levels.ERROR)
 		return
 	end
+	statusline.invalidate()
 
-	local backdated = ts ~= storage.now_utc() and " (backdated " .. storage.to_local(ts) .. ")" or ""
+	local backdated = ts ~= storage.now_utc() and " (backdated " .. util.fmt_ts(ts) .. ")" or ""
 	notify("work started · " .. project .. (ticket ~= "" and " · " .. ticket or "") .. backdated)
 end
 
@@ -75,12 +66,13 @@ function M.workend(opts)
 		notify("failed to write log", vim.log.levels.ERROR)
 		return
 	end
+	statusline.invalidate()
 
 	local closed = res.closed
 	local proj = closed.project ~= "" and " · " .. closed.project or ""
 	local tick = closed.ticket ~= "" and " · " .. closed.ticket or ""
-	local backdated = ts ~= storage.now_utc() and " (backdated " .. storage.to_local(ts) .. ")" or ""
-	notify("work ended after " .. fmt_duration(res.duration_min) .. proj .. tick .. backdated)
+	local backdated = ts ~= storage.now_utc() and " (backdated " .. util.fmt_ts(ts) .. ")" or ""
+	notify("work ended after " .. util.fmt_duration(res.duration_min) .. proj .. tick .. backdated)
 end
 
 function M.status()
@@ -111,13 +103,13 @@ function M.status()
 		work_min = work_min + storage.diff_min(start_ts, storage.now_utc())
 	end
 
-	local detail = ("today: %s worked"):format(fmt_duration(work_min))
+	local detail = ("today: %s worked"):format(util.fmt_duration(work_min))
 	if st == "recording" then
 		local tick = open.ticket ~= "" and " · " .. open.ticket or ""
-		notify(("recording since %s · %s%s — %s"):format(storage.to_local(open.ts), open.project, tick, detail))
+		notify(("recording since %s · %s%s — %s"):format(util.fmt_ts(open.ts), open.project, tick, detail))
 	elseif st == "idle" then
 		local e = entries[#entries]
-		notify(("idle (last ended %s) — %s"):format(storage.to_local(e.ts), detail))
+		notify(("idle (last ended %s) — %s"):format(util.fmt_ts(e.ts), detail))
 	else
 		notify("no entries yet — :WorkStart to begin")
 	end
