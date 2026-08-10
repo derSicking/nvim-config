@@ -198,7 +198,18 @@ week × project × ticket → hours. Written to the data dir.
 | 4    | `WorkLog` viewer                                                    | pending |
 | 5    | `WorkExport` CSV                                                    | pending |
 | 6    | sync: git remote, UTC storage, remote status, `WorkSync`/`WorkPush` | pending |
-| 7    | extras (below)                                                      | pending |
+| 7    | extras (below)                                              | pending |
+
+## Smoke test
+
+No framework, plain asserts in an isolated env (refuses to run without the
+env vars, so real data is never touched):
+
+```
+rm -rf /tmp/wt-test /tmp/wt-cfg
+WORKTIME_DATA_DIR=/tmp/wt-test XDG_CONFIG_HOME=/tmp/wt-cfg \
+  nvim --headless -u NONE -l lua/custom/worktime/tests/smoke.lua
+```
 
 ## Backlog / ideas
 

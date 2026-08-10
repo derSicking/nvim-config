@@ -81,9 +81,12 @@ function M.detect_project(cwd)
 	for name, proj in pairs(cfg.projects or {}) do
 		for _, dir in ipairs(proj.dirs or {}) do
 			local nd = normalize(dir)
-			if nd ~= "" and cwd:sub(1, #nd) == nd and cwd:sub(#nd + 1, #nd + 1) == "/" then
-				if not best_len or #nd > best_len then
-					best, best_len = name, #nd
+			if nd ~= "" and cwd:sub(1, #nd) == nd then
+				local rest = cwd:sub(#nd + 1, #nd + 1)
+				if rest == "" or rest == "/" then
+					if not best_len or #nd > best_len then
+						best, best_len = name, #nd
+					end
 				end
 			end
 		end
