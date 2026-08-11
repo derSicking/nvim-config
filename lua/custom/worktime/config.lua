@@ -75,17 +75,21 @@ local function normalize(dir)
 end
 
 -- Longest-prefix match over configured project dirs; nil if nothing matches.
+-- Malformed config entries (non-table project or dirs) are skipped.
 function M.match_project(cwd)
 	local cfg = M.get()
 	local best, best_len
 	for name, proj in pairs(cfg.projects or {}) do
-		for _, dir in ipairs(proj.dirs or {}) do
-			local nd = normalize(dir)
-			if nd ~= "" and cwd:sub(1, #nd) == nd then
-				local rest = cwd:sub(#nd + 1, #nd + 1)
-				if rest == "" or rest == "/" then
-					if not best_len or #nd > best_len then
-						best, best_len = name, #nd
+		local dirs = type(proj) == "table" and proj.dirs or nil
+		if type(dirs) == "table" then
+			for _, dir in ipairs(dirs) do
+				local nd = normalize(dir)
+				if nd ~= "" and cwd:sub(1, #nd) == nd then
+					local rest = cwd:sub(#nd + 1, #nd + 1)
+					if rest == "" or rest == "/" then
+						if not best_len or #nd > best_len then
+							best, best_len = name, #nd
+						end
 					end
 				end
 			end
@@ -102,7 +106,17 @@ end
 function M.weekly_target(project)
 	local cfg = M.get()
 	local proj = cfg.projects and cfg.projects[project]
-	return proj and proj.weekly_target or nil
+	return type(proj) == "table" and proj.weekly_target or nil
+end
+
+-- Create the data dir if needed. os.execute-based on purpose: vim.fn.mkdir
+-- is forbidden in fast-event contexts (queue worker), os.execute is not.
+function M.ensure_data_dir()
+	if vim.fn.isdirectory(data_dir) == 1 then
+		return
+	end
+	local quoted = "'" .. data_dir:gsub("'", "'\\''") .. "'"
+	os.execute("mkdir -p " .. quoted)
 end
 
 return M

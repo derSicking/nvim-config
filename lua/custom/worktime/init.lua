@@ -3,11 +3,12 @@
 
 local config = require("custom.worktime.config")
 local commands = require("custom.worktime.commands")
+local statusline = require("custom.worktime.statusline")
+local sync = require("custom.worktime.sync")
 
 config.reload()
 
 require("custom.worktime.reminders")
-require("custom.worktime.statusline")
 
 vim.api.nvim_create_user_command("WorkStart", commands.workstart, {
 	nargs = "*",
@@ -21,3 +22,16 @@ vim.api.nvim_create_user_command("WorkStatus", commands.status, {
 	nargs = 0,
 	desc = "Show recording state and today's totals",
 })
+vim.api.nvim_create_user_command("WorkSync", commands.sync_now, {
+	nargs = 0,
+	desc = "Fetch, rebase and push with the remote",
+})
+vim.api.nvim_create_user_command("WorkPush", commands.push_now, {
+	nargs = 0,
+	desc = "Push local commits now",
+})
+
+-- Warm the remote state in the background; never blocks startup.
+sync.warm(function()
+	statusline.invalidate()
+end)

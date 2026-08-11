@@ -1,6 +1,6 @@
--- Smoke tests for worktime (storage + config + command layer).
--- No framework, plain asserts. Run from the repo root, isolated from real
--- data (the test refuses to run without both env vars):
+-- Smoke tests for worktime (time + storage + config + statusline + commands
+-- + reminders). No framework, plain asserts. Run from the repo root, isolated
+-- from real data (the test refuses to run without both env vars):
 --
 --   rm -rf /tmp/wt-test /tmp/wt-cfg
 --   WORKTIME_DATA_DIR=/tmp/wt-test XDG_CONFIG_HOME=/tmp/wt-cfg \
@@ -8,26 +8,19 @@
 --
 -- Exits 0 on success, 1 on failure.
 
--- Guard: never run against real data.
+-- Note: rtp must be set before requiring the helpers module.
+vim.opt.rtp:append(vim.fn.getcwd())
+local helpers = require("custom.worktime.tests.helpers")
+helpers.guard_env()
+
 local data_dir = vim.env.WORKTIME_DATA_DIR
 local cfg_home = vim.env.XDG_CONFIG_HOME
-if not data_dir or not cfg_home then
-	print("refusing to run without WORKTIME_DATA_DIR and XDG_CONFIG_HOME")
-	os.exit(1)
-end
 
-vim.opt.rtp:append(vim.fn.getcwd())
-
+local time = require("custom.worktime.time")
 local storage = require("custom.worktime.storage")
 local config = require("custom.worktime.config")
 
-local failures = 0
-local function check(cond, msg)
-	if not cond then
-		failures = failures + 1
-		print("FAIL: " .. msg)
-	end
-end
+local check, finish = helpers.new_check()
 
 -- Isolation sanity (plain find: paths may contain pattern magic like "-")
 
@@ -70,28 +63,55 @@ check(config.match_project(home .. "/Projects/unknown") == nil, "match_project u
 check(config.detect_project(home .. "/Projects/unknown") == "unknown", "detect_project fallback unchanged")
 check(config.match_project("/tmp/wt-projects") == "sandbox", "match_project sandbox")
 
+-- Malformed config entries must not crash project matching
+local f_malformed = io.open(cfg_home .. "/nvim-worktime/config.lua", "w")
+f_malformed:write(string.format([[
+return {
+	projects = {
+		alpha = { dirs = { "%s/Projects/alpha", "%s/Projects/alpha-extra" }, weekly_target = 10 },
+		["broken"] = { dirs = "not-a-table" },
+	},
+}
+]], home, home))
+f_malformed:close()
+config.reload()
+check(config.match_project(home .. "/Projects/alpha") == "alpha", "malformed project skipped, others still match")
+-- restore clean config
+local f_restore = io.open(cfg_home .. "/nvim-worktime/config.lua", "w")
+f_restore:write(string.format([[
+return {
+	projects = {
+		alpha = { dirs = { "%s/Projects/alpha", "%s/Projects/alpha-extra" }, weekly_target = 10 },
+		beta = { dirs = { "%s/Projects/beta" }, weekly_target = 5 },
+		sandbox = { dirs = { "/tmp/wt-projects" } },
+		["percent%%proj"] = { dirs = { "/tmp/wt-percent" } },
+	},
+}
+]], home, home, home))
+f_restore:close()
+config.reload()
+
 -- Time helpers ----------------------------------------------------------------
 
-local ts = storage.now_utc()
+local ts = time.now_utc()
 check(ts:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%dZ$") ~= nil, "now_utc format: " .. ts)
-local loc = storage.to_local(ts)
+local loc = time.to_local(ts)
 check(loc ~= nil and loc:match("^%d%d%d%d%-%d%d%-%d%dT%d%d:%d%d:%d%d$") ~= nil, "to_local format")
-check(storage.to_utc(loc) == ts, "roundtrip to_utc(to_local(ts)) == ts")
-check(storage.parse_time_arg("09:00") ~= nil, "HH:MM parsed")
-check(storage.parse_time_arg("09:00") > storage.parse_time_arg("08:00"), "HH:MM lexicographic order")
-check(storage.parse_time_arg("9:30") ~= nil, "H:MM parsed")
-check(storage.parse_time_arg("2026-08-10 09:00") ~= nil, "date + HH:MM parsed")
-check(storage.parse_time_arg("2026-08-10T09:00:00") ~= nil, "full local ISO parsed")
-check(storage.parse_time_arg("2026-08-10T09:00:00Z") == "2026-08-10T09:00:00Z", "full UTC ISO kept as-is")
-check(storage.parse_time_arg("banana") == nil, "garbage rejected")
-check(storage.diff_min("2026-08-10T09:00:00Z", "2026-08-10T11:30:00Z") == 150, "diff_min works")
+check(time.to_utc(loc) == ts, "roundtrip to_utc(to_local(ts)) == ts")
+check(time.parse_time_arg("09:00") ~= nil, "HH:MM parsed")
+check(time.parse_time_arg("09:00") > time.parse_time_arg("08:00"), "HH:MM lexicographic order")
+check(time.parse_time_arg("9:30") ~= nil, "H:MM parsed")
+check(time.parse_time_arg("2026-08-10 09:00") ~= nil, "date + HH:MM parsed")
+check(time.parse_time_arg("2026-08-10T09:00:00") ~= nil, "full local ISO parsed")
+check(time.parse_time_arg("2026-08-10T09:00:00Z") == "2026-08-10T09:00:00Z", "full UTC ISO kept as-is")
+check(time.parse_time_arg("banana") == nil, "garbage rejected")
+check(time.diff_min("2026-08-10T09:00:00Z", "2026-08-10T11:30:00Z") == 150, "diff_min works")
 
 -- fmt_ts: compact notification timestamps
-local util = require("custom.worktime.util")
-local now_loc = storage.to_local(ts)
-check(util.fmt_ts(ts) == now_loc:sub(12, 16), "fmt_ts: today shows HH:MM")
+local now_loc = time.to_local(ts)
+check(time.fmt_ts(ts) == now_loc:sub(12, 16), "fmt_ts: today shows HH:MM")
 local old = "2020-01-01T10:00:00Z"
-check(util.fmt_ts(old) == storage.to_local(old):gsub("T", " "):sub(1, 16), "fmt_ts: other day shows date + HH:MM")
+check(time.fmt_ts(old) == time.to_local(old):gsub("T", " "):sub(1, 16), "fmt_ts: other day shows date + HH:MM")
 
 -- Write rules -----------------------------------------------------------------
 
@@ -102,11 +122,11 @@ check(res.ok, "start ok: " .. (res.reason or ""))
 check(storage.write(res.new_lines), "write ok")
 check(storage.state(storage.read_log()) == "recording", "state recording")
 
-res = storage.mutate_start(storage.now_utc(), "x", "", "")
+res = storage.mutate_start(time.now_utc(), "x", "", "")
 check(not res.ok, "double start rejected: " .. (res.reason or "NO REASON"))
 check(res.reason:find("since %d%d:%d%d") ~= nil, "double start shows compact time: " .. (res.reason or "?"))
 
-res = storage.mutate_end(storage.now_utc(), "done\twith\ttabs")
+res = storage.mutate_end(time.now_utc(), "done\twith\ttabs")
 check(res.ok, "end ok: " .. (res.reason or ""))
 check(res.duration_min >= 0, "duration >= 0")
 check(storage.write(res.new_lines), "write end")
@@ -114,7 +134,7 @@ local entries = storage.read_log()
 check(storage.state(entries) == "idle", "state idle")
 check(entries[#entries].message == "done with tabs", "message sanitized")
 
-res = storage.mutate_end(storage.now_utc(), "")
+res = storage.mutate_end(time.now_utc(), "")
 check(not res.ok, "end while idle rejected: " .. (res.reason or "NO REASON"))
 
 -- Backdate: append an old end line directly, then start after it
@@ -149,13 +169,23 @@ check(not res.ok, "backdate inside open block rejected: " .. (res.reason or "NO 
 -- Command layer ---------------------------------------------------------------
 
 local commands = require("custom.worktime.commands")
+local queue = require("custom.worktime.queue")
+
+-- Commands are async: wait for the queue to drain before asserting.
+local function wait_idle()
+	vim.wait(10000, function()
+		return queue.idle()
+	end)
+end
 
 -- Tail is an open start here; WorkStart must be rejected, no write.
 local n = #storage.read_log()
 commands.workstart({ args = "" })
+wait_idle()
 check(#storage.read_log() == n, "WorkStart while recording does not write")
 
 commands.workend({ args = "done for the day" })
+wait_idle()
 entries = storage.read_log()
 check(entries[#entries].event == "end", "command WorkEnd writes end")
 check(entries[#entries].message == "done for the day", "command message passed")
@@ -163,6 +193,7 @@ commands.status() -- must not error
 
 n = #storage.read_log()
 commands.workstart({ args = "2099-01-01T00:00:00Z" })
+wait_idle()
 check(#storage.read_log() == n, "future WorkStart does not write")
 
 -- Statusline ------------------------------------------------------------------
@@ -193,6 +224,7 @@ statusline.invalidate()
 
 vim.loop.sleep(1100) -- advance now_utc() past the last end's second
 commands.workstart({ args = "T-9 statusline check" })
+wait_idle()
 check(storage.state(storage.read_log()) == "recording", "statusline: recording state")
 seg = statusline.get()
 check(seg:find("⏱", 1, true) ~= nil, "statusline: segment present while recording")
@@ -200,12 +232,15 @@ check(seg:find("T-9", 1, true) ~= nil, "statusline: ticket shown")
 check(seg:find("%%=", 1, false) ~= nil, "statusline: right-alignment preserved")
 
 commands.workend({ args = "" })
+wait_idle()
 vim.loop.sleep(1100) -- same-second guard before the next start
 commands.workstart({ args = "" })
+wait_idle()
 seg = statusline.get()
 check(seg:find("Working", 1, true) ~= nil, "statusline: 'Working' when no ticket")
 
 commands.workend({ args = "" })
+wait_idle()
 check(statusline.get():find("⏱", 1, true) == nil, "statusline: segment gone when idle")
 
 -- Reminders -------------------------------------------------------------------
@@ -220,6 +255,7 @@ reminders.warn_open_block()
 -- confirm() returns the default (Yes), so the end gets written.
 vim.loop.sleep(1100)
 commands.workstart({ args = "" })
+wait_idle()
 check(storage.state(storage.read_log()) == "recording", "reminders: recording for close prompt test")
 reminders.check_left_open() -- must not error
 reminders.warn_open_block()
@@ -227,5 +263,20 @@ entries = storage.read_log()
 check(storage.state(entries) == "idle", "reminders: close prompt Yes wrote the end")
 check(entries[#entries].event == "end", "reminders: tail is end after close prompt")
 
-print(failures == 0 and "ALL OK" or failures .. " FAILURES")
-os.exit(failures == 0 and 0 or 1)
+-- Exit flush: pending queued writes are drained synchronously
+vim.loop.sleep(1100)
+local flush_ts = time.now_utc()
+queue.push({
+	kind = "write",
+	mutate = function()
+		return storage.mutate_start(flush_ts, "flush", "F-1", "")
+	end,
+	describe = function()
+		return "flushed"
+	end,
+})
+queue.flush_on_exit()
+entries = storage.read_log()
+check(entries[#entries].ticket == "F-1", "flush_on_exit wrote the queued entry")
+
+finish()

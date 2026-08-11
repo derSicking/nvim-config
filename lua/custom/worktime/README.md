@@ -3,6 +3,37 @@
 Record when you work, on which project and ticket, directly from Neovim. Derive
 weekly hours per project/ticket and export to CSV.
 
+## Module layout
+
+| Module | Responsibility |
+| --- | --- |
+| `config.lua` | paths, config file loading, project matching |
+| `time.lua` | pure time math: conversions, parsing, formatting |
+| `storage.lua` | log format: parse, validated mutations, write |
+| `sync.lua` | git remote: onboarding, fetch/rebase/push, remote state (async) |
+| `queue.lua` | serialized async write pipeline (worker, exit flush) |
+| `commands.lua` | command handlers — enqueue and return immediately |
+| `reminders.lua` | VimEnter/VimResume/VimLeavePre autocommands |
+| `statusline.lua` | statusline segment (cached, remote glyph) |
+| `notify.lua` | fast-event-safe `vim.notify` wrapper |
+| `init.lua` | wiring + command registration |
+| `tests/` | smoke (core logic) + sync (git) suites, shared harness |
+
+Dependency direction: `init` → everything; `commands` → config, notify,
+queue, storage, statusline, sync, time; `reminders` → commands, config,
+queue, storage, sync, time; `statusline` → config, storage, sync, time;
+`queue` → storage, statusline, sync, notify; `storage` → config, time;
+`sync` → config, notify; `time`/`notify` → nothing. No cycles.
+
+Async design: all commands return immediately; the write, commit and push
+run in the background through the queue, and the notification arrives when
+done. Everything in the queue worker runs in fast-event contexts
+(vim.system on_exit callbacks), where `vim.wait`, `vim.fn` and even
+`vim.notify` are forbidden — hence the shell-script git stages, the
+`os.execute`-based dir creation, and the `notify` wrapper. On exit,
+`flush_on_exit` drains queued writes synchronously (async work cannot
+complete while nvim is closing).
+
 ## Data model
 
 Timestamp-ordered TSV event log, one event per line:
@@ -95,17 +126,27 @@ rewrites use temp file + atomic rename. (See Sync below.)
 
 ## Sync (cross-machine)
 
-Optional: set `remote` in the config and the plugin manages `origin` (adds it on
-first run). Without it, everything works purely local.
+Optional: set `remote` in the config (create an empty repo on your server
+first — the remote is the source of truth). Without a remote, everything
+works purely local.
 
-The remote is the source of truth. Every mutation:
+Onboarding:
+
+- fresh machine, no local log → the repo is cloned on first use — instant
+  onboarding with the current state
+- local log but no repo → writes are rejected: save the log aside, delete
+  it, then `:WorkSync` to clone
+- clone fails (offline / remote not created yet) → blocked until `:WorkSync`
+  succeeds; no parallel local repo is created
+
+Once cloned, every mutation:
 
 1. `git fetch` — updates the remote state shown in the statusline
 2. if origin is ahead: `pull --rebase`; on conflict: abort, keep local, mark
    diverged, notify loudly — never auto-resolve, never lose data
 3. re-read the log (it may have changed) and re-validate the mutation against
    the fresh state
-4. apply → commit → push
+4. apply → commit → push (bounded retry on non-fast-forward)
 
 Offline: writes still apply locally and are committed; the statusline and a
 notification warn about divergence risk (another machine may have written).
@@ -173,7 +214,10 @@ remaining args are ticket/message. No separate break commands — a break is an
   left open by a previous session, warn about it (floating notifications
   cannot render during exit, so the next start is the reliable catch).
 - `VimLeavePre`: if a block is still open, a blocking y/n prompt — Yes
-  records the end now and closes; No closes with the block left open.
+  records the end now, then a blocking sync+push sends it to the remote
+  before closing; No closes with the block left open. Queued writes are
+  flushed and pushed as well. If the push fails (offline), the entries
+  stay committed locally and go out on the next sync.
 - Statusline segment: recording state + remote state (e.g.
   `⏱ TICKET-42 · client-a · 3.2h ⇡` — synced / push pending / remote ahead /
   diverged / offline; `Working` in place of the ticket when none was given).
@@ -204,7 +248,7 @@ week × project × ticket → hours. Written to the data dir.
 | 3    | `WorkAdd` backfill                                                  | pending |
 | 4    | `WorkLog` viewer                                                    | pending |
 | 5    | `WorkExport` CSV                                                    | pending |
-| 6    | sync: git remote, UTC storage, remote status, `WorkSync`/`WorkPush` | pending |
+| 6    | sync: git remote, UTC storage, remote status, `WorkSync`/`WorkPush` | done   |
 | 7    | extras (below)                                              | pending |
 
 ## Smoke test

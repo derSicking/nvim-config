@@ -2,7 +2,8 @@ local M = {}
 
 local config = require("custom.worktime.config")
 local storage = require("custom.worktime.storage")
-local util = require("custom.worktime.util")
+local sync = require("custom.worktime.sync")
+local time = require("custom.worktime.time")
 
 -- Capture the stock statusline (nvim's default, whatever this version
 -- provides) before replacing it, so an idle bar stays byte-identical to the
@@ -39,12 +40,12 @@ local function refresh()
 	local project = config.match_project(vim.loop.cwd())
 	if storage.state(entries) == "recording" then
 		local tail = entries[#entries]
-		local minutes = storage.diff_min(tail.ts, storage.now_utc())
+		local minutes = time.diff_min(tail.ts, time.now_utc())
 		local label = tail.ticket ~= "" and tail.ticket or "Working"
-		cache.segment = " ⏱ " .. esc(label) .. " · " .. esc(tail.project) .. " · " .. util.fmt_duration(minutes)
+		cache.segment = " ⏱ " .. esc(label) .. " · " .. esc(tail.project) .. " · " .. time.fmt_duration(minutes) .. sync.glyph()
 	elseif project then
 		-- Configured project open but idle: dimmed nudge, no stock text lost.
-		cache.segment = "%#Comment# ◌ not recording · " .. esc(project) .. "%*"
+		cache.segment = "%#Comment# ◌ not recording · " .. esc(project) .. "%*" .. sync.glyph()
 	end
 end
 
