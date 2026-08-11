@@ -5,34 +5,33 @@ weekly hours per project/ticket and export to CSV.
 
 ## Module layout
 
-| Module | Responsibility |
-| --- | --- |
-| `config.lua` | paths, config file loading, project matching |
-| `time.lua` | pure time math: conversions, parsing, formatting |
-| `storage.lua` | log format: parse, validated mutations, write |
-| `sync.lua` | git remote: onboarding, fetch/rebase/push, remote state (async) |
-| `queue.lua` | serialized async write pipeline (worker, exit flush) |
-| `commands.lua` | command handlers — enqueue and return immediately |
-| `reminders.lua` | VimEnter/VimResume/VimLeavePre autocommands |
-| `statusline.lua` | statusline segment (cached, remote glyph) |
-| `notify.lua` | fast-event-safe `vim.notify` wrapper |
-| `init.lua` | wiring + command registration |
-| `tests/` | smoke (core logic) + sync (git) suites, shared harness |
+| Module           | Responsibility                                                  |
+| ---------------- | --------------------------------------------------------------- |
+| `config.lua`     | paths, config file loading, project matching                    |
+| `time.lua`       | pure time math: conversions, parsing, formatting                |
+| `storage.lua`    | log format: parse, validated mutations, write                   |
+| `sync.lua`       | git remote: onboarding, fetch/rebase/push, remote state (async) |
+| `queue.lua`      | serialized async write pipeline (worker, exit flush)            |
+| `commands.lua`   | command handlers — enqueue and return immediately               |
+| `reminders.lua`  | VimEnter/VimResume/VimLeavePre autocommands                     |
+| `statusline.lua` | statusline segment (cached, remote glyph)                       |
+| `notify.lua`     | fast-event-safe `vim.notify` wrapper                            |
+| `init.lua`       | wiring + command registration                                   |
+| `tests/`         | smoke (core logic) + sync (git) suites, shared harness          |
 
-Dependency direction: `init` → everything; `commands` → config, notify,
-queue, storage, statusline, sync, time; `reminders` → commands, config,
-queue, storage, sync, time; `statusline` → config, storage, sync, time;
-`queue` → storage, statusline, sync, notify; `storage` → config, time;
-`sync` → config, notify; `time`/`notify` → nothing. No cycles.
+Dependency direction: `init` → everything; `commands` → config, notify, queue,
+storage, statusline, sync, time; `reminders` → commands, config, queue, storage,
+sync, time; `statusline` → config, storage, sync, time; `queue` → storage,
+statusline, sync, notify; `storage` → config, time; `sync` → config, notify;
+`time`/`notify` → nothing. No cycles.
 
-Async design: all commands return immediately; the write, commit and push
-run in the background through the queue, and the notification arrives when
-done. Everything in the queue worker runs in fast-event contexts
-(vim.system on_exit callbacks), where `vim.wait`, `vim.fn` and even
-`vim.notify` are forbidden — hence the shell-script git stages, the
-`os.execute`-based dir creation, and the `notify` wrapper. On exit,
-`flush_on_exit` drains queued writes synchronously (async work cannot
-complete while nvim is closing).
+Async design: all commands return immediately; the write, commit and push run in
+the background through the queue, and the notification arrives when done.
+Everything in the queue worker runs in fast-event contexts (vim.system on_exit
+callbacks), where `vim.wait`, `vim.fn` and even `vim.notify` are forbidden —
+hence the shell-script git stages, the `os.execute`-based dir creation, and the
+`notify` wrapper. On exit, `flush_on_exit` drains queued writes synchronously
+(async work cannot complete while nvim is closing).
 
 ## Data model
 
@@ -126,16 +125,16 @@ rewrites use temp file + atomic rename. (See Sync below.)
 
 ## Sync (cross-machine)
 
-Optional: set `remote` in the config (create an empty repo on your server
-first — the remote is the source of truth). Without a remote, everything
-works purely local.
+Optional: set `remote` in the config (create an empty repo on your server first
+— the remote is the source of truth). Without a remote, everything works purely
+local.
 
 Onboarding:
 
 - fresh machine, no local log → the repo is cloned on first use — instant
   onboarding with the current state
-- local log but no repo → writes are rejected: save the log aside, delete
-  it, then `:WorkSync` to clone
+- local log but no repo → writes are rejected: save the log aside, delete it,
+  then `:WorkSync` to clone
 - clone fails (offline / remote not created yet) → blocked until `:WorkSync`
   succeeds; no parallel local repo is created
 
@@ -187,44 +186,51 @@ header, then notifies where it lives.
 
 Project detection: longest-prefix match on cwd; if nothing matches, fall back to
 the cwd basename. The detected project is always shown in the command's
-notification so a wrong match is visible immediately.
+notification so a wrong match is visible immediately. A project with no `dirs`
+never matches by cwd — it is only reachable via the planned
+`WorkStart -p <name>` override (e.g. a general employer catch-all like `beemo`).
 
 ## Commands
 
-| Command                                           | Purpose                                             | Step |
-| ------------------------------------------------- | --------------------------------------------------- | ---- |
-| `WorkStart [time] [ticket] [message...]`          | start a work block, optionally backdated            | 1    |
-| `WorkEnd [time] [message...]`                     | end the current block, optionally backdated         | 1    |
-| `WorkStatus`                                      | current state + today's totals                      | 1    |
-| `WorkAdd start <s> end <e> [ticket] [message...]` | forgotten work into a gap                           | 3    |
-| `WorkAdd end <e> start <s> [message...]`          | forgotten break inside a block                      | 3    |
-| `WorkChange [ticket] [message...]`                | switch ticket while recording (end + start at tail) | 3    |
-| `WorkLog`                                         | viewer buffer                                       | 4    |
-| `WorkExport`                                      | CSV with derived values                             | 5    |
-| `WorkSync` / `WorkPush`                           | sync with remote now (fetch+rebase+push / push)     | 6    |
+| Command                                                 | Purpose                                                     | Step |
+| ------------------------------------------------------- | ----------------------------------------------------------- | ---- |
+| `WorkStart [-p <project>] [time] [ticket] [message...]` | start a work block (project override), optionally backdated | 1    |
+| `WorkEnd [time] [message...]`                           | end the current block, optionally backdated                 | 1    |
+| `WorkStatus`                                            | current state + today's totals                              | 1    |
+| `WorkAdd start <s> end <e> [ticket] [message...]`       | forgotten work into a gap                                   | 3    |
+| `WorkAdd end <e> start <s> [message...]`                | forgotten break inside a block                              | 3    |
+| `WorkChange [ticket] [message...]`                      | switch ticket while recording (end + start at tail)         | 3    |
+| `WorkLog`                                               | viewer buffer                                               | 4    |
+| `WorkExport`                                            | CSV with derived values                                     | 5    |
+| `WorkSync` / `WorkPush`                                 | sync with remote now (fetch+rebase+push / push)             | 6    |
 
 Optional `time` is detected by pattern (`HH:MM` or full ISO timestamp);
 remaining args are ticket/message. No separate break commands — a break is an
 `end` followed by a `start`, in one `WorkAdd` step or two live commands.
 
+Planned (decided, not yet implemented): `-p <project>` / `--project <project>`
+on `WorkStart` (and later `WorkAdd`) overrides the cwd-detected project — needed
+for catch-all projects like a general employer project that has no configured
+dirs.
+
 ## Reminders
 
 - `VimEnter` + `VimResume` (Ctrl-Z suspend): if not recording, suggest
-  `:WorkStart` — only when cwd matches a configured project. If a block was
-  left open by a previous session, warn about it (floating notifications
-  cannot render during exit, so the next start is the reliable catch).
-- `VimLeavePre`: if a block is still open, a blocking y/n prompt — Yes
-  records the end now, then a blocking sync+push sends it to the remote
-  before closing; No closes with the block left open. Queued writes are
-  flushed and pushed as well. If the push fails (offline), the entries
-  stay committed locally and go out on the next sync.
+  `:WorkStart` — only when cwd matches a configured project. If a block was left
+  open by a previous session, warn about it (floating notifications cannot
+  render during exit, so the next start is the reliable catch).
+- `VimLeavePre`: if a block is still open, a blocking y/n prompt — Yes records
+  the end now, then a blocking sync+push sends it to the remote before closing;
+  No closes with the block left open. Queued writes are flushed and pushed as
+  well. If the push fails (offline), the entries stay committed locally and go
+  out on the next sync.
 - Statusline segment: recording state + remote state (e.g.
   `⏱ TICKET-42 · client-a · 3.2h ⇡` — synced / push pending / remote ahead /
   diverged / offline; `Working` in place of the ticket when none was given).
-  Configured project open but idle: dimmed `◌ not recording · <project>`.
-  No configured project: stock bar unchanged.
-- Reminders render via `snacks.notifier` (WARN + long timeout), so they show
-  as prominent floating windows.
+  Configured project open but idle: dimmed `◌ not recording · <project>`. No
+  configured project: stock bar unchanged.
+- Reminders render via `snacks.notifier` (WARN + long timeout), so they show as
+  prominent floating windows.
 
 ## Export (derived values)
 
@@ -244,17 +250,17 @@ week × project × ticket → hours. Written to the data dir.
 | ---- | ------------------------------------------------------------------- | ------- |
 | 0    | README + scaffold                                                   | done    |
 | 1    | MVP: config + storage + commands, wired into `lua/init.lua`         | done    |
-| 2    | reminders + statusline segment                              | done   |
+| 2    | reminders + statusline segment                                      | done    |
 | 3    | `WorkAdd` backfill                                                  | pending |
 | 4    | `WorkLog` viewer                                                    | pending |
 | 5    | `WorkExport` CSV                                                    | pending |
-| 6    | sync: git remote, UTC storage, remote status, `WorkSync`/`WorkPush` | done   |
-| 7    | extras (below)                                              | pending |
+| 6    | sync: git remote, UTC storage, remote status, `WorkSync`/`WorkPush` | done    |
+| 7    | extras (below)                                                      | pending |
 
 ## Smoke test
 
-No framework, plain asserts in an isolated env (refuses to run without the
-env vars, so real data is never touched):
+No framework, plain asserts in an isolated env (refuses to run without the env
+vars, so real data is never touched):
 
 ```
 rm -rf /tmp/wt-test /tmp/wt-cfg
