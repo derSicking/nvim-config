@@ -166,6 +166,48 @@ check(entries[#entries].event == "start", "malformed line skipped, next parsed")
 res = storage.mutate_start("2026-08-10T11:00:00Z", "p", "", "")
 check(not res.ok, "backdate inside open block rejected: " .. (res.reason or "NO REASON"))
 
+-- WorkSplit: insert a block inside a block (controlled log)
+local fsplit = io.open(config.log_path, "w")
+fsplit:write("2026-08-10T09:00:00Z\tstart\tmultiko\tT-1\torig message\n")
+fsplit:write("2026-08-10T12:00:00Z\tend\t\t\t\n")
+fsplit:close()
+
+res = storage.mutate_split("2026-08-10T10:00:00Z", "2026-08-10T10:30:00Z", "multiko", "MTG-1", "meeting")
+check(res.ok, "split ok: " .. (res.reason or ""))
+check(storage.write_insert(res.insert_before, res.new_lines), "split write ok")
+entries = storage.read_log()
+check(#entries == 6, "split: 6 entries")
+check(entries[2].event == "end" and entries[2].ts == "2026-08-10T10:00:00Z", "split: original closed at s")
+check(entries[3].ticket == "MTG-1" and entries[3].message == "meeting", "split: inserted block fields")
+check(entries[4].event == "end" and entries[4].ts == "2026-08-10T10:30:00Z", "split: inserted block closed at e")
+check(entries[5].ticket == "T-1" and entries[5].message == "orig message" and entries[5].project == "multiko", "split: resume carries original identity")
+check(entries[6].event == "end", "split: original block still ends")
+local alt_ok = true
+for i = 1, #entries do
+	local want = (i % 2 == 1) and "start" or "end"
+	if entries[i].event ~= want then
+		alt_ok = false
+	end
+end
+check(alt_ok, "split: alternation holds")
+
+res = storage.mutate_split("2026-08-10T08:00:00Z", "2026-08-10T08:30:00Z", "p", "", "")
+check(not res.ok, "split: before block start rejected")
+res = storage.mutate_split("2026-08-10T11:00:00Z", "2026-08-10T13:00:00Z", "p", "", "")
+check(not res.ok, "split: beyond block end rejected")
+res = storage.mutate_split("2026-08-10T11:00:00Z", "2026-08-10T10:00:00Z", "p", "", "")
+check(not res.ok, "split: s >= e rejected")
+
+-- Split into an open tail block: resume becomes the new open tail
+local fopen2 = io.open(config.log_path, "a")
+fopen2:write("2026-08-10T14:00:00Z\tstart\tp2\tT-2\t\n")
+fopen2:close()
+res = storage.mutate_split("2026-08-10T14:30:00Z", "2026-08-10T15:00:00Z", "p2", "T-3", "")
+check(res.ok, "split into open block ok: " .. (res.reason or ""))
+check(storage.write_insert(res.insert_before, res.new_lines), "split into open block write ok")
+entries = storage.read_log()
+check(entries[#entries].event == "start" and entries[#entries].ticket == "T-2", "split into open block: resume is the open tail with original ticket")
+
 -- Command layer ---------------------------------------------------------------
 
 local commands = require("custom.worktime.commands")
@@ -231,6 +273,30 @@ check(entries[#entries].project == "other", "override: beats cwd detection")
 vim.loop.chdir(cmd_cwd)
 commands.workend({ args = "" })
 wait_idle()
+
+-- WorkSplit through the command layer (insertion lands mid-log, at 16:00)
+n = #storage.read_log()
+commands.worksplit({ args = "start 2026-08-10T16:00:00Z end 2026-08-10T16:30:00Z MTG-2 split test" })
+wait_idle()
+check(#storage.read_log() == n + 4, "WorkSplit adds 4 entries")
+entries = storage.read_log()
+local found_s, found_mtg, found_resume
+for _, e in ipairs(entries) do
+	if e.ts == "2026-08-10T16:00:00Z" and e.event == "end" then
+		found_s = true
+	elseif e.ts == "2026-08-10T16:00:00Z" and e.event == "start" and e.ticket == "MTG-2" then
+		found_mtg = true
+	elseif e.ts == "2026-08-10T16:30:00Z" and e.event == "start" then
+		found_resume = e
+	end
+end
+check(found_s, "WorkSplit: closes original at s")
+check(found_mtg, "WorkSplit: inserted block ticket")
+check(found_resume ~= nil and found_resume.ticket == "T-2", "WorkSplit: resume carries original ticket")
+n = #storage.read_log()
+commands.worksplit({ args = "banana" })
+wait_idle()
+check(#storage.read_log() == n, "WorkSplit: bad args do not write")
 
 -- Statusline ------------------------------------------------------------------
 

@@ -66,7 +66,10 @@ local function process_next()
 				end
 				return done()
 			end
-			if not storage.write(res.new_lines) then
+			local ok_write = res.insert_before
+					and storage.write_insert(res.insert_before, res.new_lines)
+				or storage.write(res.new_lines)
+			if not ok_write then
 				notify("failed to write log", vim.log.levels.ERROR)
 				return done()
 			end

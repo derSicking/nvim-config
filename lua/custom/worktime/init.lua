@@ -18,6 +18,10 @@ vim.api.nvim_create_user_command("WorkEnd", commands.workend, {
 	nargs = "*",
 	desc = "End the current block: WorkEnd [time] [message...]",
 })
+vim.api.nvim_create_user_command("WorkSplit", commands.worksplit, {
+	nargs = "*",
+	desc = "Insert a block inside another block: WorkSplit start <s> end <e> [ticket] [message...]",
+})
 vim.api.nvim_create_user_command("WorkStatus", commands.status, {
 	nargs = 0,
 	desc = "Show recording state and today's totals",

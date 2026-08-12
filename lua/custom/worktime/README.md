@@ -94,6 +94,11 @@ ones insert at their sorted position — same rules either way.
   `start 9 | end 10 | start 11 | end 17`) and, at the tail of an open block, is
   exactly "break now, resume now" in one atomic step. The resumed `start` can
   carry a new ticket/project.
+- `WorkSplit start <s> end <e> …` inserts a whole work block inside an existing
+  block (e.g. a meeting during a ticket): the original block ends at `s`, the
+  new block runs `s`–`e` with the given project/ticket/message, and a `start` at
+  `e` resumes the original block carrying its recorded project/ticket/message.
+  Four lines, inserted atomically; alternation stays closed.
 - Out-of-window pairs are rejected with the allowed range in the message — never
   silently clamped. Future timestamps are rejected.
 - A break pair needs a containing block, a work pair needs a gap. The
@@ -191,17 +196,18 @@ reachable via `WorkStart -p <name>` (e.g. a general employer catch-all like
 
 ## Commands
 
-| Command                                                 | Purpose                                                     | Step |
-| ------------------------------------------------------- | ----------------------------------------------------------- | ---- |
-| `WorkStart [-p <project>] [time] [ticket] [message...]` | start a work block (project override), optionally backdated | 1    |
-| `WorkEnd [time] [message...]`                           | end the current block, optionally backdated                 | 1    |
-| `WorkStatus`                                            | current state + today's totals                              | 1    |
-| `WorkAdd start <s> end <e> [ticket] [message...]`       | forgotten work into a gap                                   | 3    |
-| `WorkAdd end <e> start <s> [message...]`                | forgotten break inside a block                              | 3    |
-| `WorkChange [ticket] [message...]`                      | switch ticket while recording (end + start at tail)         | 3    |
-| `WorkLog`                                               | viewer buffer                                               | 4    |
-| `WorkExport`                                            | CSV with derived values                                     | 5    |
-| `WorkSync` / `WorkPush`                                 | sync with remote now (fetch+rebase+push / push)             | 6    |
+| Command                                                            | Purpose                                                     | Step |
+| ------------------------------------------------------------------ | ----------------------------------------------------------- | ---- |
+| `WorkStart [-p <project>] [time] [ticket] [message...]`            | start a work block (project override), optionally backdated | 1    |
+| `WorkEnd [time] [message...]`                                      | end the current block, optionally backdated                 | 1    |
+| `WorkStatus`                                                       | current state + today's totals                              | 1    |
+| `WorkAdd start <s> end <e> [ticket] [message...]`                  | forgotten work into a gap                                   | 3    |
+| `WorkAdd end <e> start <s> [message...]`                           | forgotten break inside a block                              | 3    |
+| `WorkSplit start <s> end <e> [-p <project>] [ticket] [message...]` | insert a block inside another block                         | 3    |
+| `WorkChange [ticket] [message...]`                                 | switch ticket while recording (end + start at tail)         | 3    |
+| `WorkLog`                                                          | viewer buffer                                               | 4    |
+| `WorkExport`                                                       | CSV with derived values                                     | 5    |
+| `WorkSync` / `WorkPush`                                            | sync with remote now (fetch+rebase+push / push)             | 6    |
 
 Optional `time` is detected by pattern (`HH:MM` or full ISO timestamp);
 remaining args are ticket/message. No separate break commands — a break is an

@@ -111,6 +111,47 @@ function M.workend(opts)
 	})
 end
 
+function M.worksplit(opts)
+	local a = parse_args(opts.args)
+	if a.err then
+		notify(a.err, vim.log.levels.WARN)
+		return
+	end
+	-- Expect: start <s> end <e> [ticket] [message...]
+	local rest = a.rest
+	if rest[1] ~= "start" or rest[3] ~= "end" then
+		notify("usage: WorkSplit start <time> end <time> [ticket] [message...]", vim.log.levels.WARN)
+		return
+	end
+	local ts_s = time.parse_time_arg(rest[2])
+	local ts_e = time.parse_time_arg(rest[4])
+	if not ts_s or not ts_e then
+		notify("invalid time in WorkSplit (HH:MM or full ISO)", vim.log.levels.WARN)
+		return
+	end
+	local ticket, message = take_ticket(vim.list_slice(rest, 5))
+	local project = a.project or config.detect_project(vim.loop.cwd())
+
+	queue.push({
+		kind = "write",
+		mutate = function()
+			return storage.mutate_split(ts_s, ts_e, project, ticket, message)
+		end,
+		describe = function(res)
+			local orig = res.closed
+			local orig_label = orig.ticket ~= "" and orig.ticket or orig.message
+			return ("split %s at %s · inserted %s%s (%s–%s)"):format(
+				orig_label,
+				time.fmt_ts(ts_s),
+				ticket ~= "" and ticket or "block",
+				project ~= "" and " · " .. project or "",
+				time.fmt_ts(ts_s),
+				time.fmt_ts(ts_e)
+			)
+		end,
+	})
+end
+
 function M.status()
 	local entries = storage.read_log()
 	local st = storage.state(entries)
