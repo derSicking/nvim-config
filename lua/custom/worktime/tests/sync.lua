@@ -145,6 +145,18 @@ local c5 = f5:read("*a")
 f5:close()
 check(c5:find("\tend\t\t\t\n", 1, true) ~= nil, "close prompt end reached the remote immediately")
 
+-- 4c. Idle exit must not block on network: no fetch/push when the log tail
+-- is an end (regression: on_exit used to sync unconditionally).
+write_config("ssh://git@127.0.0.1:1/nope.git")
+config.reload()
+vim.fn.system("git -C " .. data_dir .. " remote set-url origin ssh://git@127.0.0.1:1/nope.git")
+local commits_before = tonumber((vim.fn.system("git -C " .. data_dir .. " rev-list --count HEAD"):gsub("%s+$", "")))
+local state_before = sync.state()
+reminders.on_exit() -- idle -> no prompt, no push attempt
+check(sync.state() == state_before, "idle exit: no sync attempt, state unchanged")
+local commits_after = tonumber((vim.fn.system("git -C " .. data_dir .. " rev-list --count HEAD"):gsub("%s+$", "")))
+check(commits_after == commits_before, "idle exit: no new commits")
+
 -- 5. Offline with an existing repo: writes proceed, state offline
 write_config("ssh://git@127.0.0.1:1/nope.git")
 config.reload()

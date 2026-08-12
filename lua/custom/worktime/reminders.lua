@@ -83,11 +83,17 @@ function M.warn_open_block()
 end
 
 -- Full exit flow: drain queued writes, ask about an open block, then push
--- everything (blocking) so the remote is up to date before nvim closes.
+-- (blocking) so the remote is up to date before nvim closes. The push only
+-- runs when a block was open (local state, no network involved in the
+-- check) — plain idle exits never block on the network; their local
+-- commits go out on the next session's sync.
 function M.on_exit()
 	queue.flush_on_exit()
+	local was_recording = storage.state(storage.read_log()) == "recording"
 	M.warn_open_block()
-	sync.sync_now_blocking()
+	if was_recording then
+		sync.sync_now_blocking()
+	end
 end
 
 vim.api.nvim_create_autocmd("VimEnter", {

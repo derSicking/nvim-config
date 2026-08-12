@@ -222,8 +222,10 @@ dirs.
 - `VimLeavePre`: if a block is still open, a blocking y/n prompt — Yes records
   the end now, then a blocking sync+push sends it to the remote before closing;
   No closes with the block left open. Queued writes are flushed and pushed as
-  well. If the push fails (offline), the entries stay committed locally and go
-  out on the next sync.
+  well. The blocking push only runs when a block was open (local state check, no
+  network) — plain idle exits never block; their local commits go out on the
+  next sync. If a push fails (offline), the entries stay committed locally and
+  go out on the next sync.
 - Statusline segment: recording state + remote state (e.g.
   `⏱ TICKET-42 · client-a · 3.2h ⇡` — synced / push pending / remote ahead /
   diverged / offline; `Working` in place of the ticket when none was given).
