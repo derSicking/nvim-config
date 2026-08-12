@@ -111,6 +111,69 @@ function M.workend(opts)
 	})
 end
 
+function M.workadd(opts)
+	local a = parse_args(opts.args)
+	if a.err then
+		notify(a.err, vim.log.levels.WARN)
+		return
+	end
+	local rest = a.rest
+
+	-- Work pair into a gap
+	if rest[1] == "start" and rest[3] == "end" then
+		local ts_s = time.parse_time_arg(rest[2])
+		local ts_e = time.parse_time_arg(rest[4])
+		if not ts_s or not ts_e then
+			notify("invalid time in WorkAdd (HH:MM or full ISO)", vim.log.levels.WARN)
+			return
+		end
+		local ticket, message = take_ticket(vim.list_slice(rest, 5))
+		local project = a.project or config.detect_project(vim.loop.cwd())
+		queue.push({
+			kind = "write",
+			mutate = function()
+				return storage.mutate_add_work(ts_s, ts_e, project, ticket, message)
+			end,
+			describe = function()
+				return ("added work %s–%s · %s%s"):format(
+					time.fmt_ts(ts_s),
+					time.fmt_ts(ts_e),
+					project,
+					ticket ~= "" and " · " .. ticket or ""
+				)
+			end,
+		})
+		return
+	end
+
+	-- Break pair into a block
+	if rest[1] == "end" and rest[3] == "start" then
+		local ts_e = time.parse_time_arg(rest[2])
+		local ts_s = time.parse_time_arg(rest[4])
+		if not ts_s or not ts_e then
+			notify("invalid time in WorkAdd (HH:MM or full ISO)", vim.log.levels.WARN)
+			return
+		end
+		local message = table.concat(vim.list_slice(rest, 5), " ")
+		queue.push({
+			kind = "write",
+			mutate = function()
+				return storage.mutate_add_break(ts_e, ts_s, message)
+			end,
+			describe = function(res)
+				local label = res.closed.ticket ~= "" and res.closed.ticket or res.closed.project
+				return ("added break %s–%s · %s"):format(time.fmt_ts(ts_e), time.fmt_ts(ts_s), label)
+			end,
+		})
+		return
+	end
+
+	notify(
+		"usage: WorkAdd start <s> end <e> [ticket] [message...] | WorkAdd end <e> start <s> [message...]",
+		vim.log.levels.WARN
+	)
+end
+
 function M.worksplit(opts)
 	local a = parse_args(opts.args)
 	if a.err then

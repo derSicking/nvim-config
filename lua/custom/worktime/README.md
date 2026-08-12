@@ -258,7 +258,7 @@ week × project × ticket → hours. Written to the data dir.
 | 0    | README + scaffold                                                   | done    |
 | 1    | MVP: config + storage + commands, wired into `lua/init.lua`         | done    |
 | 2    | reminders + statusline segment                                      | done    |
-| 3    | `WorkAdd` backfill                                                  | pending |
+| 3    | `WorkAdd` + `WorkSplit` backfill                                    | done    |
 | 4    | `WorkLog` viewer                                                    | pending |
 | 5    | `WorkExport` CSV                                                    | pending |
 | 6    | sync: git remote, UTC storage, remote status, `WorkSync`/`WorkPush` | done    |
@@ -278,6 +278,8 @@ WORKTIME_DATA_DIR=/tmp/wt-test XDG_CONFIG_HOME=/tmp/wt-cfg \
 ## Backlog / ideas
 
 - weekly summary notification (`:WorkSummary`)
+- `WorkChange [ticket] [message...]` — switch ticket while recording (end +
+  start at tail) — designed, not yet implemented
 - month view in the viewer
 - idle detection → suggest a break
 - git branch → ticket hint on `start`

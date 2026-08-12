@@ -22,6 +22,10 @@ vim.api.nvim_create_user_command("WorkSplit", commands.worksplit, {
 	nargs = "*",
 	desc = "Insert a block inside another block: WorkSplit start <s> end <e> [ticket] [message...]",
 })
+vim.api.nvim_create_user_command("WorkAdd", commands.workadd, {
+	nargs = "*",
+	desc = "Backfill: WorkAdd start <s> end <e> [ticket] [message...] | WorkAdd end <e> start <s> [message...]",
+})
 vim.api.nvim_create_user_command("WorkStatus", commands.status, {
 	nargs = 0,
 	desc = "Show recording state and today's totals",

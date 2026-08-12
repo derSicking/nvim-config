@@ -182,6 +182,110 @@ function M.mutate_split(ts_s, ts_e, project, ticket, message)
 	return fail("no work block contains " .. time.fmt_ts(ts_s) .. "–" .. time.fmt_ts(ts_e))
 end
 
+-- WorkAdd: work pair (start s, end e) into a gap — between an end and the
+-- next start, or at the file edges (before the first start / after the
+-- last end). Returns { ok, new_lines, insert_before = s } or fail.
+function M.mutate_add_work(ts_s, ts_e, project, ticket, message)
+	local err = check_ts(ts_s, "start")
+	if err then
+		return fail(err)
+	end
+	err = check_ts(ts_e, "end")
+	if err then
+		return fail(err)
+	end
+	if ts_s >= ts_e then
+		return fail("end must be after start")
+	end
+
+	local function result()
+		return {
+			ok = true,
+			new_lines = {
+				entry_line(ts_s, "start", project, ticket, message),
+				entry_line(ts_e, "end", "", "", ""),
+			},
+			insert_before = ts_s,
+		}
+	end
+
+	local entries = M.read_log()
+	if #entries == 0 then
+		return result()
+	end
+	-- leading gap, before the first start
+	if entries[1].event == "start" and ts_e < entries[1].ts then
+		return result()
+	end
+	-- gaps between an end and the next start
+	for i = 2, #entries do
+		local a, b = entries[i - 1], entries[i]
+		if a.event == "end" and b.event == "start" and a.ts < ts_s and ts_e < b.ts then
+			return result()
+		end
+	end
+	-- trailing gap after the last end
+	local tail = entries[#entries]
+	if tail.event == "end" and tail.ts < ts_s then
+		return result()
+	end
+	return fail(
+		"no gap contains " .. time.fmt_ts(ts_s) .. "–" .. time.fmt_ts(ts_e)
+			.. " — it must be between an end and the next start (WorkAdd end…start inserts into blocks)"
+	)
+end
+
+-- WorkAdd: break pair (end e, start s) into a block — forgotten time off
+-- inside a work block. The resume start copies the block's recorded
+-- project/ticket/message; the message describes the break.
+-- Returns { ok, new_lines, insert_before = e, closed } or fail.
+function M.mutate_add_break(ts_e, ts_s, message)
+	local err = check_ts(ts_e, "end")
+	if err then
+		return fail(err)
+	end
+	err = check_ts(ts_s, "start")
+	if err then
+		return fail(err)
+	end
+	if ts_s <= ts_e then
+		return fail("start must be after end")
+	end
+
+	local function result(block_start)
+		return {
+			ok = true,
+			new_lines = {
+				entry_line(ts_e, "end", "", "", message),
+				entry_line(ts_s, "start", block_start.project, block_start.ticket, block_start.message),
+			},
+			insert_before = ts_e,
+			closed = block_start,
+		}
+	end
+
+	local entries = M.read_log()
+	local block_start
+	for _, e in ipairs(entries) do
+		if e.event == "start" then
+			block_start = e
+		elseif e.event == "end" and block_start then
+			if block_start.ts < ts_e and ts_s < e.ts then
+				return result(block_start)
+			end
+			block_start = nil
+		end
+	end
+	-- open tail block
+	if block_start and block_start.ts < ts_e then
+		return result(block_start)
+	end
+	return fail(
+		"no work block contains " .. time.fmt_ts(ts_e) .. "–" .. time.fmt_ts(ts_s)
+			.. " — it must be inside a block (WorkAdd start…end inserts into gaps)"
+	)
+end
+
 -- Write ------------------------------------------------------------------------
 
 -- Append the mutation's lines to the log. Returns true on success.

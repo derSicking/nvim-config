@@ -208,6 +208,48 @@ check(storage.write_insert(res.insert_before, res.new_lines), "split into open b
 entries = storage.read_log()
 check(entries[#entries].event == "start" and entries[#entries].ticket == "T-2", "split into open block: resume is the open tail with original ticket")
 
+-- WorkAdd: work pair into a gap, break pair into a block (controlled log,
+-- ends with an open start so the command-layer section still sees recording)
+local fadd = io.open(config.log_path, "w")
+fadd:write("2026-08-10T09:00:00Z\tstart\tmultiko\tT-1\t\n")
+fadd:write("2026-08-10T10:00:00Z\tend\t\t\t\n")
+fadd:write("2026-08-10T11:00:00Z\tstart\tp2\tT-2\t\n")
+fadd:write("2026-08-10T12:00:00Z\tend\t\t\t\n")
+fadd:write("2026-08-10T13:00:00Z\tstart\tp3\tT-3\t\n")
+fadd:close()
+
+-- work into the 10:00-11:00 gap
+res = storage.mutate_add_work("2026-08-10T10:15:00Z", "2026-08-10T10:45:00Z", "beemo", "B-1", "quick thing")
+check(res.ok, "workadd ok: " .. (res.reason or ""))
+check(storage.write_insert(res.insert_before, res.new_lines), "workadd write ok")
+entries = storage.read_log()
+check(#entries == 7, "workadd: 7 entries")
+check(entries[3].ticket == "B-1" and entries[3].ts == "2026-08-10T10:15:00Z", "workadd: inserted start")
+check(entries[4].event == "end" and entries[4].ts == "2026-08-10T10:45:00Z", "workadd: inserted end")
+
+-- rejections
+res = storage.mutate_add_work("2026-08-10T09:30:00Z", "2026-08-10T10:30:00Z", "p", "", "") -- spans block + gap
+check(not res.ok, "workadd: spanning a block rejected")
+res = storage.mutate_add_work("2026-08-10T09:30:00Z", "2026-08-10T09:45:00Z", "p", "", "") -- inside a block
+check(not res.ok, "workadd: inside a block rejected")
+res = storage.mutate_add_work("2026-08-10T10:45:00Z", "2026-08-10T10:30:00Z", "p", "", "") -- s >= e
+check(not res.ok, "workadd: s >= e rejected")
+
+-- break into the T-2 block (11:00-12:00)
+res = storage.mutate_add_break("2026-08-10T11:30:00Z", "2026-08-10T11:45:00Z", "lunch")
+check(res.ok, "breakadd ok: " .. (res.reason or ""))
+check(storage.write_insert(res.insert_before, res.new_lines), "breakadd write ok")
+entries = storage.read_log()
+check(#entries == 9, "breakadd: 9 entries")
+check(entries[6].event == "end" and entries[6].ts == "2026-08-10T11:30:00Z" and entries[6].message == "lunch", "breakadd: break end with message")
+check(entries[7].ticket == "T-2" and entries[7].project == "p2", "breakadd: resume carries block identity")
+
+-- rejections
+res = storage.mutate_add_break("2026-08-10T10:05:00Z", "2026-08-10T10:10:00Z", "") -- inside a gap
+check(not res.ok, "breakadd: in a gap rejected")
+res = storage.mutate_add_break("2026-08-10T11:30:00Z", "2026-08-10T11:20:00Z", "") -- s <= e
+check(not res.ok, "breakadd: s <= e rejected")
+
 -- Command layer ---------------------------------------------------------------
 
 local commands = require("custom.worktime.commands")
@@ -292,11 +334,29 @@ for _, e in ipairs(entries) do
 end
 check(found_s, "WorkSplit: closes original at s")
 check(found_mtg, "WorkSplit: inserted block ticket")
-check(found_resume ~= nil and found_resume.ticket == "T-2", "WorkSplit: resume carries original ticket")
+check(found_resume ~= nil and found_resume.ticket == "T-3", "WorkSplit: resume carries original ticket")
 n = #storage.read_log()
 commands.worksplit({ args = "banana" })
 wait_idle()
 check(#storage.read_log() == n, "WorkSplit: bad args do not write")
+
+-- WorkAdd through the command layer
+n = #storage.read_log()
+commands.workadd({ args = "start 2026-08-10T08:00:00Z end 2026-08-10T08:30:00Z -p beemo B-2 early work" })
+wait_idle()
+check(#storage.read_log() == n + 2, "WorkAdd: work pair adds 2 entries")
+entries = storage.read_log()
+check(entries[1].ticket == "B-2" and entries[1].project == "beemo", "WorkAdd: leading gap work inserted first")
+commands.workadd({ args = "end 2026-08-10T09:30:00Z start 2026-08-10T09:45:00Z coffee" })
+wait_idle()
+check(#storage.read_log() == n + 4, "WorkAdd: break pair adds 2 more")
+entries = storage.read_log()
+check(entries[4].event == "end" and entries[4].ts == "2026-08-10T09:30:00Z" and entries[4].message == "coffee", "WorkAdd: break end with message")
+check(entries[5].ticket == "T-1", "WorkAdd: break resume carries block ticket")
+n = #storage.read_log()
+commands.workadd({ args = "banana" })
+wait_idle()
+check(#storage.read_log() == n, "WorkAdd: bad args do not write")
 
 -- Statusline ------------------------------------------------------------------
 
