@@ -182,13 +182,12 @@ return {
 ```
 
 On first load the plugin creates the dir and an example config with a comment
-header, then notifies where it lives.
-
-Project detection: longest-prefix match on cwd; if nothing matches, fall back to
-the cwd basename. The detected project is always shown in the command's
-notification so a wrong match is visible immediately. A project with no `dirs`
-never matches by cwd — it is only reachable via the planned
-`WorkStart -p <name>` override (e.g. a general employer catch-all like `beemo`).
+header, then notifies where it lives. Project detection: longest-prefix match on
+cwd; if nothing matches, fall back to the cwd basename. The detected project is
+always shown in the command's notification so a wrong match is visible
+immediately. A project with no `dirs` never matches by cwd — it is only
+reachable via `WorkStart -p <name>` (e.g. a general employer catch-all like
+`beemo`).
 
 ## Commands
 
@@ -208,10 +207,10 @@ Optional `time` is detected by pattern (`HH:MM` or full ISO timestamp);
 remaining args are ticket/message. No separate break commands — a break is an
 `end` followed by a `start`, in one `WorkAdd` step or two live commands.
 
-Planned (decided, not yet implemented): `-p <project>` / `--project <project>`
-on `WorkStart` (and later `WorkAdd`) overrides the cwd-detected project — needed
-for catch-all projects like a general employer project that has no configured
-dirs.
+`-p <project>` / `--project <project>` (anywhere in the args) overrides the
+cwd-detected project on `WorkStart` — needed for catch-all projects like a
+general employer project that has no configured dirs. The override will extend
+to `WorkAdd` when it lands.
 
 ## Reminders
 

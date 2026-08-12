@@ -12,23 +12,49 @@ local statusline = require("custom.worktime.statusline")
 local sync = require("custom.worktime.sync")
 local time = require("custom.worktime.time")
 
--- Split args into (utc_ts, rest, err, explicit). A first token containing
--- ":" is parsed as time; anything else is treated as ticket/message.
+-- Parse command args: optional -p/--project override, optional time,
+-- ticket and message. Returns
+--   { ts = utc, rest = {...}, project = name|nil, explicit = bool }
+-- or { err = "..." }.
 -- `explicit` tells whether the user supplied the time (vs. defaulting to
 -- now) — the only reliable "backdated" signal: comparing ts against a
 -- re-read now_utc() would false-positive whenever a second boundary or the
 -- sync round-trip falls between the two calls.
-local function split_args(args)
+local function parse_args(args)
 	local parts = vim.split(args, "%s+", { trimempty = true })
-	local first = parts[1]
+
+	local project
+	local kept = {}
+	local i = 1
+	while i <= #parts do
+		local p = parts[i]
+		if p == "-p" or p == "--project" then
+			local name = parts[i + 1]
+			if not name then
+				return { err = "missing project name after " .. p }
+			end
+			project = name
+			i = i + 2
+		elseif p:match("^%-%-project=") then
+			project = p:sub(11)
+			i = i + 1
+		else
+			kept[#kept + 1] = p
+			i = i + 1
+		end
+	end
+
+	-- A first kept token containing ":" is parsed as time; anything else is
+	-- treated as ticket/message.
+	local first = kept[1]
 	if not first or not first:match(":") then
-		return time.now_utc(), parts, nil, false
+		return { ts = time.now_utc(), rest = kept, project = project, explicit = false }
 	end
 	local ts = time.parse_time_arg(first)
 	if not ts then
-		return nil, nil, "invalid time: " .. first, true
+		return { err = "invalid time: " .. first }
 	end
-	return ts, vim.list_slice(parts, 2), nil, true
+	return { ts = ts, rest = vim.list_slice(kept, 2), project = project, explicit = true }
 end
 
 -- "ticket" + "message" from the remaining args.
@@ -46,41 +72,41 @@ local function backdated_note(ts, explicit)
 end
 
 function M.workstart(opts)
-	local ts, rest, err, explicit = split_args(opts.args)
-	if err then
-		notify(err, vim.log.levels.WARN)
+	local a = parse_args(opts.args)
+	if a.err then
+		notify(a.err, vim.log.levels.WARN)
 		return
 	end
-	local ticket, message = take_ticket(rest)
-	local project = config.detect_project(vim.loop.cwd())
+	local ticket, message = take_ticket(a.rest)
+	local project = a.project or config.detect_project(vim.loop.cwd())
 
 	queue.push({
 		kind = "write",
 		mutate = function()
-			return storage.mutate_start(ts, project, ticket, message)
+			return storage.mutate_start(a.ts, project, ticket, message)
 		end,
 		describe = function()
-			return "work started · " .. project .. (ticket ~= "" and " · " .. ticket or "") .. backdated_note(ts, explicit)
+			return "work started · " .. project .. (ticket ~= "" and " · " .. ticket or "") .. backdated_note(a.ts, a.explicit)
 		end,
 	})
 end
 
 function M.workend(opts)
-	local ts, rest, err, explicit = split_args(opts.args)
-	if err then
-		notify(err, vim.log.levels.WARN)
+	local a = parse_args(opts.args)
+	if a.err then
+		notify(a.err, vim.log.levels.WARN)
 		return
 	end
-	local message = table.concat(rest, " ")
+	local message = table.concat(a.rest, " ")
 
 	queue.push({
 		kind = "write",
 		mutate = function()
-			return storage.mutate_end(ts, message)
+			return storage.mutate_end(a.ts, message)
 		end,
 		describe = function(res)
 			return "work ended after " .. time.fmt_duration(res.duration_min) .. storage.describe(res.closed)
-				.. backdated_note(ts, explicit)
+				.. backdated_note(a.ts, a.explicit)
 		end,
 	})
 end
