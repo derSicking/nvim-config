@@ -241,8 +241,23 @@ to `WorkAdd` when it lands.
 
 ## Export (derived values)
 
-CSV rows: ISO week × project → hours, weekly target, diff. Ticket breakdown: ISO
-week × project × ticket → hours. Written to the data dir.
+`WorkExport [week]` / `WorkExport YYYY-Www` renders a German markdown report for
+an ISO week (default: current) and opens it in a buffer:
+
+- **Zusammenfassung**: hours per project, weekly target and delta where
+  configured (actual − target, `+` over / `−` under). Every configured project
+  appears — even with 0.0h, so empty weeks still show their target delta, and
+  all configured targets count toward the total.
+- **Pro Tag**: day × project matrix with daily totals
+- **Per project**: block detail table (day, ticket, hours, description) with
+  subtotal and target delta
+
+Written to `exports/YYYY-Www.md` in the data dir (gitignored, so derived files
+never enter the repo). Rules: blocks are attributed to the local day of their
+start; still-open blocks are excluded from the totals silently (their end is
+unknown — close them with `WorkEnd`/`WorkSplit` first); zero minute switch pairs
+are skipped in the detail tables. CSV export is a planned follow-up reusing the
+same `stats` aggregation.
 
 ## Non-goals
 
@@ -260,7 +275,7 @@ week × project × ticket → hours. Written to the data dir.
 | 2    | reminders + statusline segment                                      | done    |
 | 3    | `WorkAdd` + `WorkSplit` backfill                                    | done    |
 | 4    | `WorkLog` viewer                                                    | pending |
-| 5    | `WorkExport` CSV                                                    | pending |
+| 5    | `WorkExport` CSV                                                    | done    |
 | 6    | sync: git remote, UTC storage, remote status, `WorkSync`/`WorkPush` | done    |
 | 7    | extras (below)                                                      | pending |
 

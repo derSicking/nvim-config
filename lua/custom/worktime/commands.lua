@@ -5,6 +5,7 @@
 local M = {}
 
 local config = require("custom.worktime.config")
+local export = require("custom.worktime.export")
 local notify = require("custom.worktime.notify").notify
 local queue = require("custom.worktime.queue")
 local storage = require("custom.worktime.storage")
@@ -213,6 +214,31 @@ function M.worksplit(opts)
 			)
 		end,
 	})
+end
+
+-- "" -> current week; "33" -> week 33 of this year; "2026-W33" explicit.
+local function parse_week_arg(arg)
+	if arg == "" then
+		return time.iso_week(os.date("%Y-%m-%d"))
+	end
+	local y, w = arg:match("^(%d%d%d%d)%-W(%d%d?)$")
+	if y then
+		return tonumber(y), tonumber(w)
+	end
+	local w2 = arg:match("^(%d%d?)$")
+	if w2 then
+		return tonumber(os.date("%Y")), tonumber(w2)
+	end
+	return nil
+end
+
+function M.workexport(opts)
+	local year, week = parse_week_arg(opts.args)
+	if not year or week < 1 or week > 53 then
+		notify("usage: WorkExport [week] | WorkExport YYYY-Www", vim.log.levels.WARN)
+		return
+	end
+	export.run(year, week)
 end
 
 function M.status()

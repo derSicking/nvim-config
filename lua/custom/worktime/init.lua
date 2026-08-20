@@ -30,6 +30,10 @@ vim.api.nvim_create_user_command("WorkStatus", commands.status, {
 	nargs = 0,
 	desc = "Show recording state and today's totals",
 })
+vim.api.nvim_create_user_command("WorkExport", commands.workexport, {
+	nargs = "?",
+	desc = "Export a weekly markdown report: WorkExport [week] | WorkExport YYYY-Www",
+})
 vim.api.nvim_create_user_command("WorkSync", commands.sync_now, {
 	nargs = 0,
 	desc = "Fetch, rebase and push with the remote",

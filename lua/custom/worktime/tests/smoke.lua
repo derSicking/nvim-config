@@ -113,6 +113,21 @@ check(time.fmt_ts(ts) == now_loc:sub(12, 16), "fmt_ts: today shows HH:MM")
 local old = "2020-01-01T10:00:00Z"
 check(time.fmt_ts(old) == time.to_local(old):gsub("T", " "):sub(1, 16), "fmt_ts: other day shows date + HH:MM")
 
+-- ISO week helpers
+local wy, ww = time.iso_week("2026-08-10")
+check(wy == 2026 and ww == 33, "iso_week: 2026-08-10 -> 2026-W33")
+wy, ww = time.iso_week("2026-01-01")
+check(wy == 2026 and ww == 1, "iso_week: 2026-01-01 (Thu) -> 2026-W1")
+wy, ww = time.iso_week("2025-12-31")
+check(wy == 2026 and ww == 1, "iso_week: 2025-12-31 (Wed) -> 2026-W1")
+wy, ww = time.iso_week("2021-01-01")
+check(wy == 2020 and ww == 53, "iso_week: 2021-01-01 (Fri) -> 2020-W53")
+check(time.week_start_date(2026, 33) == "2026-08-10", "week_start: 2026-W33 -> Mon 2026-08-10")
+check(time.week_start_date(2026, 1) == "2025-12-29", "week_start: 2026-W1 -> Mon 2025-12-29")
+check(time.week_start_date(2020, 53) == "2020-12-28", "week_start: 2020-W53 -> Mon 2020-12-28")
+check(time.add_days("2026-03-01", -1) == "2026-02-28", "add_days: backwards")
+check(time.add_days("2026-03-01", 1) == "2026-03-02", "add_days: forward")
+
 -- Write rules -----------------------------------------------------------------
 
 check(storage.state(storage.read_log()) == "empty", "empty state")
@@ -250,6 +265,67 @@ check(not res.ok, "breakadd: in a gap rejected")
 res = storage.mutate_add_break("2026-08-10T11:30:00Z", "2026-08-10T11:20:00Z", "") -- s <= e
 check(not res.ok, "breakadd: s <= e rejected")
 
+-- Weekly stats aggregation (controlled log; ends with an open start so the
+-- command-layer section still sees recording)
+local fstats = io.open(config.log_path, "w")
+fstats:write("2026-08-07T09:00:00Z\tstart\tmultiko\tMK-KW32\t\n")
+fstats:write("2026-08-07T10:00:00Z\tend\t\t\t\n")
+fstats:write("2026-08-10T08:00:00Z\tstart\tmultiko\tMK-1\tmorning | urgent\n")
+fstats:write("2026-08-10T10:00:00Z\tend\t\t\t\n")
+fstats:write("2026-08-10T10:30:00Z\tstart\tunfallkasse\tANR-1\t\n")
+fstats:write("2026-08-10T11:00:00Z\tend\t\t\t\n")
+fstats:write("2026-08-10T15:00:00Z\tstart\tp3\tT-4\t\n")
+fstats:write("2026-08-10T17:00:00Z\tend\t\t\t\n")
+fstats:write("2026-08-10T22:30:00Z\tstart\tmultiko\tMK-3\tlate\n")
+fstats:write("2026-08-10T23:00:00Z\tend\t\t\t\n")
+fstats:write("2026-08-11T09:00:00Z\tstart\tmultiko\tMK-2\t\n")
+fstats:write("2026-08-11T09:30:00Z\tend\t\t\t\n")
+fstats:write("2026-08-11T10:00:00Z\tstart\tp3\tT-5\t\n") -- open, excluded from totals
+fstats:close()
+
+local stats = require("custom.worktime.stats")
+local report = stats.compute_week(storage.read_log(), 2026, 33, { multiko = 10 })
+check(report.total_minutes == 330, "stats: total 330m, got " .. report.total_minutes)
+check(report.projects.multiko.minutes == 180, "stats: multiko 180m")
+check(report.projects.unfallkasse.minutes == 30, "stats: unfallkasse 30m")
+check(report.projects.p3.minutes == 120, "stats: p3 120m")
+check(report.days["2026-08-10"] == 270, "stats: Mo 270m")
+check(report.days["2026-08-11"] == 60, "stats: Di 60m (incl. cross-midnight block)")
+check(report.matrix["2026-08-10"].multiko == 120, "stats: Mo multiko 120m")
+check(report.matrix["2026-08-11"].multiko == 60, "stats: Di multiko 60m")
+check(report.projects.multiko.target_minutes == 600, "stats: multiko target 600m")
+check(report.projects.multiko.delta_minutes == -420, "stats: multiko delta -420m")
+check(report.total_target_minutes == 600 and report.total_delta_minutes == -270, "stats: totals vs target")
+check(#report.open_blocks == 1, "stats: open block collected, excluded from totals")
+check(report.projects.multiko.blocks[1].message == "morning | urgent", "stats: block message kept")
+check(report.projects.multiko.blocks[#report.projects.multiko.blocks].ticket ~= "MK-KW32", "stats: KW32 block excluded")
+
+-- Export: render + write
+local export = require("custom.worktime.export")
+
+-- Configured projects with no hours still appear, with target and delta
+local report_empty = stats.compute_week(storage.read_log(), 2026, 33, { multiko = 10, beemo = 5 })
+check(report_empty.projects.beemo ~= nil, "stats: configured project with 0 hours present")
+check(report_empty.projects.beemo.minutes == 0, "stats: beemo 0 minutes")
+check(report_empty.projects.beemo.delta_minutes == -300, "stats: beemo delta -300m")
+check(report_empty.total_target_minutes == 900, "stats: total target includes empty projects")
+local md_empty = export.render(report_empty)
+check(md_empty:find("| beemo | 0.0h | 5.0h | -5.0h |", 1, true) ~= nil, "export: empty configured project row")
+
+-- Export: render + write
+local md = export.render(report)
+check(md:find("# Arbeitszeiten KW 33", 1, true) ~= nil, "export: header")
+check(md:find("| multiko | 3.0h | 10.0h | -7.0h |", 1, true) ~= nil, "export: summary row with delta")
+check(md:find("morning \\| urgent", 1, true) ~= nil, "export: pipes escaped")
+export.run(2026, 33)
+local fexp = io.open(config.data_dir .. "/exports/2026-W33.md")
+check(fexp ~= nil, "export: file written")
+if fexp then
+	local fmd = fexp:read("*a")
+	fexp:close()
+	check(fmd:find("## Pro Tag", 1, true) ~= nil, "export: daily section in file")
+end
+
 -- Command layer ---------------------------------------------------------------
 
 local commands = require("custom.worktime.commands")
@@ -334,7 +410,7 @@ for _, e in ipairs(entries) do
 end
 check(found_s, "WorkSplit: closes original at s")
 check(found_mtg, "WorkSplit: inserted block ticket")
-check(found_resume ~= nil and found_resume.ticket == "T-3", "WorkSplit: resume carries original ticket")
+check(found_resume ~= nil and found_resume.ticket == "T-4", "WorkSplit: resume carries original ticket")
 n = #storage.read_log()
 commands.worksplit({ args = "banana" })
 wait_idle()
@@ -342,17 +418,31 @@ check(#storage.read_log() == n, "WorkSplit: bad args do not write")
 
 -- WorkAdd through the command layer
 n = #storage.read_log()
-commands.workadd({ args = "start 2026-08-10T08:00:00Z end 2026-08-10T08:30:00Z -p beemo B-2 early work" })
+commands.workadd({ args = "start 2026-08-10T07:00:00Z end 2026-08-10T07:30:00Z -p beemo B-2 early work" })
 wait_idle()
 check(#storage.read_log() == n + 2, "WorkAdd: work pair adds 2 entries")
 entries = storage.read_log()
-check(entries[1].ticket == "B-2" and entries[1].project == "beemo", "WorkAdd: leading gap work inserted first")
+local b2_start
+for _, e in ipairs(entries) do
+	if e.ts == "2026-08-10T07:00:00Z" and e.event == "start" then
+		b2_start = e
+	end
+end
+check(b2_start ~= nil and b2_start.ticket == "B-2" and b2_start.project == "beemo", "WorkAdd: gap work inserted with override")
 commands.workadd({ args = "end 2026-08-10T09:30:00Z start 2026-08-10T09:45:00Z coffee" })
 wait_idle()
 check(#storage.read_log() == n + 4, "WorkAdd: break pair adds 2 more")
 entries = storage.read_log()
-check(entries[4].event == "end" and entries[4].ts == "2026-08-10T09:30:00Z" and entries[4].message == "coffee", "WorkAdd: break end with message")
-check(entries[5].ticket == "T-1", "WorkAdd: break resume carries block ticket")
+local brk_end, brk_resume
+for _, e in ipairs(entries) do
+	if e.ts == "2026-08-10T09:30:00Z" and e.event == "end" then
+		brk_end = e
+	elseif e.ts == "2026-08-10T09:45:00Z" and e.event == "start" then
+		brk_resume = e
+	end
+end
+check(brk_end ~= nil and brk_end.message == "coffee", "WorkAdd: break end with message")
+check(brk_resume ~= nil and brk_resume.ticket == "MK-1", "WorkAdd: break resume carries block ticket")
 n = #storage.read_log()
 commands.workadd({ args = "banana" })
 wait_idle()

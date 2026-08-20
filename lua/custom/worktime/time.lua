@@ -129,4 +129,65 @@ function M.fmt_duration(min)
 	return string.format("%dh %02dm", h, m)
 end
 
+-- Date helpers (local dates "YYYY-MM-DD", noon-based so DST never shifts
+-- the day) ---------------------------------------------------------------
+
+local DAYS_IN_MONTH = { 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 }
+
+local function is_leap(y)
+	return (y % 4 == 0 and y % 100 ~= 0) or y % 400 == 0
+end
+
+local function days_in_month(y, m)
+	if m == 2 and is_leap(y) then
+		return 29
+	end
+	return DAYS_IN_MONTH[m]
+end
+
+-- "YYYY-MM-DD" + n days (n may be negative)
+function M.add_days(date, n)
+	local y, m, d = date:match("^(%d%d%d%d)-(%d%d)-(%d%d)$")
+	y, m, d = tonumber(y), tonumber(m), tonumber(d)
+	d = d + n
+	while d < 1 do
+		m = m - 1
+		if m < 1 then
+			m = 12
+			y = y - 1
+		end
+		d = d + days_in_month(y, m)
+	end
+	while d > days_in_month(y, m) do
+		d = d - days_in_month(y, m)
+		m = m + 1
+		if m > 12 then
+			m = 1
+			y = y + 1
+		end
+	end
+	return string.format("%04d-%02d-%02d", y, m, d)
+end
+
+-- Local day of week: 0 = Monday .. 6 = Sunday
+function M.dow(date)
+	local t = epoch_from_local(date .. "T12:00:00")
+	return (os.date("*t", t).wday + 5) % 7
+end
+
+-- ISO year and week number for a local date (Thursday rule)
+function M.iso_week(date)
+	local thursday = M.add_days(date, 3 - M.dow(date))
+	local y = tonumber(thursday:sub(1, 4))
+	local yday = os.date("*t", epoch_from_local(thursday .. "T12:00:00")).yday
+	return y, math.floor((yday - 1) / 7) + 1
+end
+
+-- Monday of the given ISO week ("YYYY-MM-DD")
+function M.week_start_date(year, week)
+	local jan1 = year .. "-01-01"
+	local week1_monday = M.add_days(jan1, -M.dow(jan1))
+	return M.add_days(week1_monday, (week - 1) * 7)
+end
+
 return M
