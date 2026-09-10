@@ -18,5 +18,12 @@ vim.g.rustaceanvim = {
 			end, { buffer = 0 })
 		end,
 		capabilities = lsp.capabilities,
+		default_settings = {
+			["rust-analyzer"] = {
+				cargo = {
+					allFeatures = true,
+				},
+			},
+		},
 	},
 }
