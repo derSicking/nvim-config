@@ -31,7 +31,7 @@ require("conform").formatters_by_ft = {
 	jsonc = { "prettierd" },
 	typescript = { "prettierd", "eslint_d", lsp_format = "never" },
 	html = { "prettierd", lsp_format = "never" },
-	htmlangular = { "prettierd", lsp_format = "first" },
+	htmlangular = { "prettierd", lsp_format = "never" },
 	css = { "prettierd", lsp_format = "never" },
 	scss = { "prettierd", lsp_format = "never" },
 	markdown = { "prettierd_prose_wrap" },

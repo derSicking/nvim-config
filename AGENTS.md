@@ -47,6 +47,23 @@ by `lua/plugins/init.lua`.
 - LSP keymaps (`K`, `gd`, `gr`, `dp`, `dP`, `<leader>f`, `<leader>rn`) set in
   `on_attach` in `lua/lsp.lua`
 
+## Formatting (conform + prettierd)
+
+`prettierd` is a long-lived daemon, keyed by cwd (core_d's
+`.prettierd@<encoded cwd>`), so each project directory gets its own. It resolves
+the project's `prettier` _path_ per request but then `require()`s it, and Node
+caches modules by path — so after `npm install` replaces
+`node_modules/prettier`, a running daemon keeps formatting with the old version
+and silently diverges from `prettier --check`.
+
+- After updating dependencies in a project (or whenever formatting disagrees
+  with the CLI), run `prettierd stop` to spawn fresh daemons on the next save.
+- Debug with `prettierd --debug-info <file>`, but note it runs in a _fresh
+  client process_, so it reports what a new daemon would load — not what a
+  running daemon is actually using.
+- `html`/`htmlangular` use `lsp_format = "never"`, so templates are formatted by
+  prettierd (matching `prettier --check`) instead of the HTML language server.
+
 ## Keymaps summary
 
 | Keys                                              | Action                                  |
